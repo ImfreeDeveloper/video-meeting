@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "statusMessage": "Formatting with Prettier",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; [ -n \"$f\" ] || exit 0; cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; pnpm exec prettier --write --ignore-unknown \"$f\"; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}

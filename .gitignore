@@ -1,0 +1,47 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# build output
+dist/
+build/
+.next/
+out/
+
+# turbo
+.turbo/
+
+# testing / coverage
+coverage/
+
+# caches
+*.tsbuildinfo
+.eslintcache
+
+# env files
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.pem
+
+# next
+next-env.d.ts
+
+# vercel
+.vercel
+
+# claude code — personal, machine-local settings (shared config stays tracked)
+.claude/settings.local.json

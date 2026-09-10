@@ -1,0 +1,14 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Fail install when the running Node version doesn't satisfy "engines".
+engineStrict: true
+
+# Decorator-heavy (NestJS) peer graphs resolve more smoothly with this off.
+strictPeerDependencies: false
+
+# Native build scripts we explicitly opt out of (added by create-next-app).
+allowBuilds:
+  sharp: false
+  unrs-resolver: false
