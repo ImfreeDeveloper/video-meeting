@@ -20,6 +20,19 @@ Shared packages live under `packages/*`.
 pnpm install
 ```
 
+## Database
+
+Local Postgres runs via Docker Compose:
+
+```bash
+docker compose up -d     # start
+docker compose down      # stop (add -v to also drop the data volume)
+```
+
+Config is env-driven — copy `.env.example` to `.env` to override
+`POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT`
+(default port `5432`).
+
 ## Common scripts (run from the repo root)
 
 | Command             | Description                             |

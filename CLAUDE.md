@@ -17,6 +17,7 @@ Shared libraries go under `packages/*` (currently empty). Each app has its own
 ## Requirements
 
 - Node.js `>= 22` (`.nvmrc` pins `24`); `engineStrict` — install fails on a wrong version.
+- Docker (with Compose v2) — for the local Postgres database.
 - pnpm via Corepack (`corepack enable`). `packageManager` is pinned in `package.json`.
 
 ## Commands (run from the repo root)
@@ -46,6 +47,13 @@ pnpm api start:dev  # -> pnpm --filter @claudelar/api start:dev
 
 Run `pnpm lint`, `pnpm typecheck`, and `pnpm test` (or the app-scoped
 equivalents). Turborepo caches results, so reruns are cheap.
+
+## Database
+
+- Local Postgres runs via Docker Compose (`docker-compose.yml` at the repo root, service `postgres`, image `postgres:17-alpine`).
+- `docker compose up -d` starts it; `docker compose down` stops it (add `-v` to also drop the `postgres-data` volume).
+- Config is env-driven — see `.env.example` (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`, default port `5432`). Copy `.env.example` to `.env` to override.
+- No app currently connects to it — `apps/api` has no ORM/DB client wired up yet.
 
 ## Tooling layout
 
