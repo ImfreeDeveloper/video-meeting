@@ -22,7 +22,13 @@ src/
   app.service.ts
 test/
   app.e2e-spec.ts    supertest e2e
+  auth.e2e-spec.ts   supertest e2e for register/login (TDD: written ahead of the auth module)
 ```
+
+DTO validation uses `class-validator` + `class-transformer` via a global
+`ValidationPipe` (`{ whitelist: true, transform: true }`). `auth.e2e-spec.ts`
+wires it in its `beforeEach`; the auth implementation must apply the same
+pipe globally in `main.ts` so production behavior matches the tests.
 
 ## Commands (from `apps/api`, or `pnpm api <script>` from root)
 
