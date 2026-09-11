@@ -24,12 +24,21 @@ src/
     prisma.module.ts    @Global() module exporting PrismaService
     prisma.service.ts   PrismaClient (pg driver adapter), connects/disconnects with the Nest lifecycle
   auth/
-    auth.module.ts      registers JwtModule (secret/expiry from env)
-    auth.controller.ts  POST /auth/register, POST /auth/login
-    auth.service.ts     register (creates a user) / login (looks one up only) — bcryptjs hashing, JWT signing
+    auth.module.ts        registers CqrsModule + JwtModule (secret/expiry from env)
+    auth.controller.ts    POST /auth/register, POST /auth/login — dispatch only, via CommandBus/QueryBus
+    access-token.util.ts  shared JWT-signing helper used by both handlers
     dto/
-      register.dto.ts   email + password (min 8 chars)
-      login.dto.ts      email + password
+      register.dto.ts     email + password (min 8 chars)
+      login.dto.ts        email + password
+    commands/
+      register.command.ts           RegisterCommand(email, password)
+      handlers/register.handler.ts  creates the user (bcryptjs hash), publishes UserRegisteredEvent, signs the token
+    queries/
+      login.query.ts               LoginQuery(email, password)
+      handlers/login.handler.ts    looks the user up only — never creates one — verifies password, signs the token
+    events/
+      user-registered.event.ts           UserRegisteredEvent(userId, email)
+      handlers/user-registered.handler.ts  logs on registration; add more handlers here for side effects (welcome email, analytics, …)
   generated/prisma/     Prisma Client output (generated, gitignored — run `prisma generate` after schema changes)
 prisma/
   schema.prisma         User model (id, email @unique, passwordHash, timestamps)
@@ -44,13 +53,19 @@ DTO validation uses `class-validator` + `class-transformer` via a global
 `ValidationPipe` (`{ whitelist: true, transform: true }`), applied in both
 `main.ts` and each e2e spec's `beforeEach`.
 
-### Auth
+### Auth (CQRS)
 
-- `POST /auth/register` `{ email, password }` → `201 { accessToken }`. Always creates a user; duplicate email → `409`.
-- `POST /auth/login` `{ email, password }` → `200 { accessToken }`. Only looks a user up, never creates one; unknown email or wrong password → `401`.
+Auth is built on `@nestjs/cqrs`: the controller only dispatches through
+`CommandBus`/`QueryBus` and contains no business logic. Register is a
+**command** (it mutates state — creates a user); login is a **query** (it
+only reads — "does this user/password combination exist").
+
+- `POST /auth/register` `{ email, password }` → `RegisterCommand` → `RegisterHandler` → `201 { accessToken }`. Always creates a user; duplicate email → `409`. On success, publishes `UserRegisteredEvent` on the `EventBus` (currently just logged by `UserRegisteredHandler` — this is the seam for side effects like a welcome email, without touching the handler).
+- `POST /auth/login` `{ email, password }` → `LoginQuery` → `LoginHandler` → `200 { accessToken }`. Only looks a user up, never creates one; unknown email or wrong password → `401`.
 - Invalid payload (missing/invalid email, password < 8 chars on register, missing password on login) → `400`.
-- Passwords are hashed with `bcryptjs` (never stored or returned in plaintext). `accessToken` is a JWT signed with `JWT_SECRET`, payload `{ sub: userId, email }`.
+- Passwords are hashed with `bcryptjs` (never stored or returned in plaintext). `accessToken` is a JWT signed with `JWT_SECRET`, payload `{ sub: userId, email }` — built by the shared `signAccessToken` helper so both handlers stay consistent.
 - Prisma unique-constraint violations (`P2002`) on `User.email` are the source of truth for the `409` on register — not a separate existence check — to avoid a check-then-create race.
+- Adding an auth use case: new command/query classes go in `commands/`/`queries/`, one handler per class in the matching `handlers/` folder, registered in `auth.module.ts`'s `providers`. Keep handlers focused on one command/query each — don't grow a handler into a god-service.
 
 ### Database (Prisma)
 
@@ -86,7 +101,7 @@ DTO validation uses `class-validator` + `class-transformer` via a global
 
 ## Conventions
 
-- Feature = a module folder under `src/` (`*.module.ts`, `*.controller.ts`, `*.service.ts`), registered in `app.module.ts`.
+- Feature = a module folder under `src/` (`*.module.ts`, `*.controller.ts`, `*.service.ts`), registered in `app.module.ts`. `auth/` is the exception — it uses CQRS (`commands/`, `queries/`, `events/`) instead of a single service; follow that pattern there rather than adding an `auth.service.ts`.
 - Wire dependencies through constructor DI, not manual instantiation.
 - Co-locate unit tests as `*.spec.ts`; put cross-module HTTP tests in `test/*.e2e-spec.ts`.
 - ESLint here relaxes `no-explicit-any`, `no-extraneous-class`; `no-floating-promises` is a warning — still await or `void` your promises.

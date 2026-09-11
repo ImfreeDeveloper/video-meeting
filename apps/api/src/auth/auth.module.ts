@@ -1,10 +1,18 @@
 import { Module } from '@nestjs/common';
+import { CqrsModule } from '@nestjs/cqrs';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { AuthController } from './auth.controller.js';
-import { AuthService } from './auth.service.js';
+import { RegisterHandler } from './commands/handlers/register.handler.js';
+import { UserRegisteredHandler } from './events/handlers/user-registered.handler.js';
+import { LoginHandler } from './queries/handlers/login.handler.js';
+
+const CommandHandlers = [RegisterHandler];
+const QueryHandlers = [LoginHandler];
+const EventHandlers = [UserRegisteredHandler];
 
 @Module({
   imports: [
+    CqrsModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
       signOptions: {
@@ -13,6 +21,6 @@ import { AuthService } from './auth.service.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [...CommandHandlers, ...QueryHandlers, ...EventHandlers],
 })
 export class AuthModule {}
