@@ -33,6 +33,10 @@ Config is env-driven — copy `.env.example` to `.env` to override
 `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT`
 (default port `5432`).
 
+`apps/api` connects to it via Prisma — copy `apps/api/.env.example` to
+`apps/api/.env` (sets `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`), then
+run `pnpm api prisma:migrate` to apply migrations. See `apps/api/CLAUDE.md`.
+
 ## Common scripts (run from the repo root)
 
 | Command             | Description                             |

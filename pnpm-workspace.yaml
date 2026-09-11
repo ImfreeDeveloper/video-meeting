@@ -8,7 +8,10 @@ engineStrict: true
 # Decorator-heavy (NestJS) peer graphs resolve more smoothly with this off.
 strictPeerDependencies: false
 
-# Native build scripts we explicitly opt out of (added by create-next-app).
+# Native build scripts we explicitly opt in/out of.
 allowBuilds:
+  '@prisma/engines': true # downloads Prisma's schema/query engine binaries
+  prisma: true # Prisma CLI preinstall step
+  esbuild: false # ships prebuilt binaries via optionalDependencies; no build script needed
   sharp: false
   unrs-resolver: false

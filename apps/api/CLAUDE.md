@@ -16,38 +16,72 @@ NestJS 12 HTTP API. See the repo-root `CLAUDE.md` for monorepo-wide setup.
 
 ```
 src/
-  main.ts            bootstrap; listens on process.env.PORT ?? 3001
-  app.module.ts      root module
-  app.controller.ts  + app.controller.spec.ts (unit)
+  main.ts               bootstrap; listens on process.env.PORT ?? 3001; loads .env; global ValidationPipe
+  app.module.ts         root module (imports PrismaModule, AuthModule)
+  app.controller.ts     + app.controller.spec.ts (unit)
   app.service.ts
+  prisma/
+    prisma.module.ts    @Global() module exporting PrismaService
+    prisma.service.ts   PrismaClient (pg driver adapter), connects/disconnects with the Nest lifecycle
+  auth/
+    auth.module.ts      registers JwtModule (secret/expiry from env)
+    auth.controller.ts  POST /auth/register, POST /auth/login
+    auth.service.ts     register (creates a user) / login (looks one up only) — bcryptjs hashing, JWT signing
+    dto/
+      register.dto.ts   email + password (min 8 chars)
+      login.dto.ts      email + password
+  generated/prisma/     Prisma Client output (generated, gitignored — run `prisma generate` after schema changes)
+prisma/
+  schema.prisma         User model (id, email @unique, passwordHash, timestamps)
+  migrations/           Prisma migration history (committed)
 test/
   app.e2e-spec.ts    supertest e2e
-  auth.e2e-spec.ts   supertest e2e for register/login (TDD: written ahead of the auth module)
+  auth.e2e-spec.ts   supertest e2e for register/login
+  setup-env.ts       loads .env for e2e runs (vitest.config.e2e.ts setupFiles)
 ```
 
 DTO validation uses `class-validator` + `class-transformer` via a global
-`ValidationPipe` (`{ whitelist: true, transform: true }`). `auth.e2e-spec.ts`
-wires it in its `beforeEach`; the auth implementation must apply the same
-pipe globally in `main.ts` so production behavior matches the tests.
+`ValidationPipe` (`{ whitelist: true, transform: true }`), applied in both
+`main.ts` and each e2e spec's `beforeEach`.
+
+### Auth
+
+- `POST /auth/register` `{ email, password }` → `201 { accessToken }`. Always creates a user; duplicate email → `409`.
+- `POST /auth/login` `{ email, password }` → `200 { accessToken }`. Only looks a user up, never creates one; unknown email or wrong password → `401`.
+- Invalid payload (missing/invalid email, password < 8 chars on register, missing password on login) → `400`.
+- Passwords are hashed with `bcryptjs` (never stored or returned in plaintext). `accessToken` is a JWT signed with `JWT_SECRET`, payload `{ sub: userId, email }`.
+- Prisma unique-constraint violations (`P2002`) on `User.email` are the source of truth for the `409` on register — not a separate existence check — to avoid a check-then-create race.
+
+### Database (Prisma)
+
+- ORM is Prisma 7 (`prisma/schema.prisma`), pointed at the repo-root Docker Compose Postgres via `DATABASE_URL`.
+- Client generator is `prisma-client` (the new TS-first generator), output to `src/generated/prisma` — **inside** `src/` so it stays under `tsconfig.build.json`'s `rootDir`. It's generated, gitignored, and excluded from lint/Prettier; regenerate with `pnpm api prisma:generate` after editing the schema (also runs automatically via `postinstall`).
+- The generated client requires a driver adapter — `PrismaService` (`src/prisma/prisma.service.ts`) constructs it with `@prisma/adapter-pg` + `pg`, using `DATABASE_URL`.
+- CLI config lives in `prisma7.config.ts` (Prisma 7's config file, auto-discovered by the CLI — not `prisma.config.ts`).
+- Migrations: `pnpm api prisma:migrate` (dev, creates + applies) / `pnpm api prisma:deploy` (applies only, for CI/prod). Commit everything under `prisma/migrations/`.
 
 ## Commands (from `apps/api`, or `pnpm api <script>` from root)
 
-| Script              | Purpose                                      |
-| ------------------- | -------------------------------------------- |
-| `dev` / `start:dev` | `nest start --watch`                         |
-| `start:debug`       | watch + `--debug`                            |
-| `build`             | `nest build` -> `dist/`                      |
-| `start:prod`        | `node dist/main`                             |
-| `lint`              | `eslint .`                                   |
-| `typecheck`         | `tsc --noEmit -p tsconfig.json`              |
-| `test`              | `vitest run` (`**/*.spec.ts`)                |
-| `test:watch`        | `vitest`                                     |
-| `test:cov`          | coverage (v8)                                |
-| `test:e2e`          | `vitest run --config ./vitest.config.e2e.ts` |
+| Script              | Purpose                                                      |
+| ------------------- | ------------------------------------------------------------ |
+| `dev` / `start:dev` | `nest start --watch`                                         |
+| `start:debug`       | watch + `--debug`                                            |
+| `build`             | `nest build` -> `dist/`                                      |
+| `start:prod`        | `node dist/main`                                             |
+| `lint`              | `eslint .`                                                   |
+| `typecheck`         | `tsc --noEmit -p tsconfig.json`                              |
+| `test`              | `vitest run` (`**/*.spec.ts`)                                |
+| `test:watch`        | `vitest`                                                     |
+| `test:cov`          | coverage (v8)                                                |
+| `test:e2e`          | `vitest run --config ./vitest.config.e2e.ts`                 |
+| `prisma:generate`   | `prisma generate` — regenerate the client from the schema    |
+| `prisma:migrate`    | `prisma migrate dev` — create + apply a migration (local)    |
+| `prisma:deploy`     | `prisma migrate deploy` — apply pending migrations (CI/prod) |
+| `prisma:studio`     | `prisma studio` — browse the DB                              |
 
 ## Config
 
-- `PORT` (default `3001`) — see `.env.example`. No `ConfigModule` yet; `main.ts` reads `process.env` directly.
+- `PORT` (default `3001`), `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN` — see `.env.example`. No `ConfigModule`; `dotenv/config` loads `.env` at the top of `main.ts` (and in `test/setup-env.ts` for e2e), `main.ts`/services read `process.env` directly.
 - `nest-cli.json` — `sourceRoot: src`, `deleteOutDir` on build.
 
 ## Conventions

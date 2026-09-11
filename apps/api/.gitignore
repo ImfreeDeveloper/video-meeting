@@ -1,0 +1,11 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+/src/generated/prisma
+
+# AI assistant skills auto-installed by `prisma init` — not used by this repo
+.claude/skills
+.agents
+.windsurf
+skills-lock.json

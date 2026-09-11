@@ -7,3 +7,7 @@ out/
 coverage/
 .turbo/
 *.tsbuildinfo
+
+# Prisma-generated client and CLI config — not hand-authored
+apps/api/src/generated/
+apps/api/prisma7.config.ts

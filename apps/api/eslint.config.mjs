@@ -3,7 +3,16 @@ import tseslint from 'typescript-eslint';
 import base from '../../eslint.config.base.mjs';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'coverage/**', '*.config.ts', '*.config.mjs', 'eslint.config.mjs'] },
+  {
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'src/generated/**',
+      '*.config.ts',
+      '*.config.mjs',
+      'eslint.config.mjs',
+    ],
+  },
   ...base,
   {
     languageOptions: {
