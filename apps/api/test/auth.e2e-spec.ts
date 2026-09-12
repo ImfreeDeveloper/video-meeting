@@ -89,8 +89,8 @@ describe('Auth (e2e)', () => {
         .expect(400);
     });
 
-    it('rejects a password shorter than 8 characters', async () => {
-      await register(uniqueEmail(), 'short').expect(400);
+    it('rejects a password shorter than 6 characters', async () => {
+      await register(uniqueEmail(), 'shor').expect(400);
     });
   });
 

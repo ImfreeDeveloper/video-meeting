@@ -30,7 +30,7 @@ src/
     guards/
       jwt-auth.guard.ts   JwtAuthGuard — verifies the `Authorization: Bearer <token>` header via JwtService, attaches `request.user = { userId, email }`; missing/invalid token → 401. Shared by any feature module that needs authenticated routes.
     dto/
-      register.dto.ts     email + password (min 8 chars)
+      register.dto.ts     email + password (min 6 chars)
       login.dto.ts        email + password
     commands/
       register.command.ts           RegisterCommand(email, password)
@@ -104,7 +104,7 @@ reads — "does this user/password combination exist").
 
 - `POST /auth/register` `{ email, password }` → `RegisterCommand` → `RegisterHandler` → `201 { accessToken }`. Always creates a user; duplicate email → `409`. On success, publishes `UserRegisteredEvent` on the `EventBus` (currently just logged by `UserRegisteredHandler`).
 - `POST /auth/login` `{ email, password }` → `LoginQuery` → `LoginHandler` → `200 { accessToken }`. Only looks a user up, never creates one; unknown email or wrong password → `401`.
-- Invalid payload (missing/invalid email, password < 8 chars on register, missing password on login) → `400`.
+- Invalid payload (missing/invalid email, password < 6 chars on register, missing password on login) → `400`.
 - Passwords are hashed with `bcryptjs` (never stored or returned in plaintext). `accessToken` is a JWT signed with `JWT_SECRET`, payload `{ sub: userId, email }` — built by the shared `signAccessToken` helper so both handlers stay consistent.
 - Prisma unique-constraint violations (`P2002`) on `User.email` are the source of truth for the `409` on register — not a separate existence check — to avoid a check-then-create race.
 
