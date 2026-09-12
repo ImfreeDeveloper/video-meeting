@@ -8,7 +8,8 @@ monorepo-wide setup.
 - Next.js `16.3.4`, React `19.2.8`, App Router with Turbopack.
 - TypeScript, `strict`, `moduleResolution: bundler`.
 - Path alias `@/*` -> `src/*`.
-- CSS Modules (`*.module.css`) + a global `src/app/globals.css`. No CSS framework.
+- Tailwind CSS v4 + [HeroUI v3](https://heroui.com) (`@heroui/react`) for UI components — no provider needed in v3, compound component API (e.g. `Card.Header`). CSS Modules (`*.module.css`) still used for one-off layout; `src/app/globals.css` imports `tailwindcss` then `@heroui/styles`, in that order.
+- Use the `heroui-react` skill before adding/editing HeroUI components — v3 docs differ from v2 in your training data.
 - Server Components by default — add `'use client'` only when a component needs browser APIs, state, or effects.
 
 ## Layout
@@ -25,13 +26,13 @@ next.config.ts    currently empty
 
 ## Commands (from `apps/web`, or `pnpm web <script>` from root)
 
-| Script      | Purpose                              |
-| ----------- | ------------------------------------ |
-| `dev`       | `next dev --port 3000`               |
-| `build`     | `next build`                         |
+| Script      | Purpose                                  |
+| ----------- | ---------------------------------------- |
+| `dev`       | `next dev --port 3000`                   |
+| `build`     | `next build`                             |
 | `start`     | `next start --port 3000` (needs a build) |
-| `lint`      | `eslint .`                           |
-| `typecheck` | `next typegen && tsc --noEmit`       |
+| `lint`      | `eslint .`                               |
+| `typecheck` | `next typegen && tsc --noEmit`           |
 
 There is no test setup in this app yet.
 
