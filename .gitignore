@@ -18,6 +18,8 @@ coverage/
 # caches
 *.tsbuildinfo
 .eslintcache
+__pycache__/
+*.pyc
 
 # env files
 .env
