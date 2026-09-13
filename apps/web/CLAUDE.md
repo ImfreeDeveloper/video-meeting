@@ -9,6 +9,7 @@ monorepo-wide setup.
 - TypeScript, `strict`, `moduleResolution: bundler`.
 - Path alias `@/*` -> `src/*`.
 - Tailwind CSS v4 + [HeroUI v3](https://heroui.com) (`@heroui/react`) for UI components — no provider needed in v3, compound component API (e.g. `Card.Header`). CSS Modules (`*.module.css`) still used for one-off layout; `src/app/globals.css` imports `tailwindcss` then `@heroui/styles`, in that order.
+- `globals.css` uses Tailwind v4's cascade layers (`@import 'tailwindcss'` sets up `theme`/`base`/`components`/`utilities`). Any custom global rule (resets, `*` selectors, element defaults) must go inside `@layer base { ... }` — an unlayered rule wins over _every_ layered rule regardless of specificity, so it would silently override Tailwind utilities and HeroUI's own component styles app-wide.
 - Use the `heroui-react` skill before adding/editing HeroUI components — v3 docs differ from v2 in your training data.
 - Server Components by default — add `'use client'` only when a component needs browser APIs, state, or effects.
 
@@ -47,6 +48,27 @@ There is no test setup in this app yet.
 - Keep the client bundle small: fetch data in Server Components; push `'use client'` to the leaves.
 - Use `next/image`, `next/font`, and `next/link` rather than raw equivalents (enforced by `eslint-config-next` core-web-vitals).
 - The `vercel-react-best-practices` skill applies to non-trivial React/Next work.
+
+## Definition of done for UI changes
+
+Any change that affects what's rendered (a new page/component, a layout or
+styling tweak, a form, etc.) is not done once the code compiles. Before
+reporting the task as complete:
+
+1. Run the dev server and actually load the affected page(s) in a browser
+   (e.g. via the `claude-in-chrome` skill or Playwright) — don't rely on
+   reading the code or a type/lint pass to judge whether it looks and
+   behaves correctly. Check the real rendered result, not just the intended
+   one — computed styles can differ from what the class names imply (see the
+   `@layer` cascade note below).
+2. Test the actual interaction, not just the resting state: fill in forms,
+   trigger validation/error states, click through the flow, and check at
+   least one mobile-width viewport (~390px) alongside desktop.
+3. Run the `ui-ux-pro-max` skill against the change (relevant `--domain`
+   searches, or `--design-system` for a new page) and address what it flags.
+
+Skip this only for changes with no visual/behavioral surface (e.g. pure
+refactors, comments, non-UI config).
 
 ## Keep the docs current
 

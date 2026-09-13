@@ -14,7 +14,7 @@ import {
 import { linkVariants } from '@heroui/styles';
 import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent, type SVGProps } from 'react';
+import { useRef, useState, type FormEvent, type SVGProps } from 'react';
 import { AuthApiError, registerUser } from '@/lib/auth-api';
 
 const EMAIL_PATTERN = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
@@ -37,6 +37,40 @@ function VideoCameraIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function EyeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19.5C5 19.5 1.5 12 1.5 12a20.3 20.3 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4.5c7 0 10.5 7.5 10.5 7.5a20.29 20.29 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <path d="M1.5 1.5 22.5 22.5" />
+    </svg>
+  );
+}
+
 export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -45,6 +79,9 @@ export default function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEmailTaken, setIsEmailTaken] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   const isEmailFormatValid = EMAIL_PATTERN.test(email);
   const isPasswordLongEnough = password.length >= PASSWORD_MIN_LENGTH;
@@ -59,6 +96,11 @@ export default function RegisterPage() {
     setServerError(null);
 
     if (!isEmailFormatValid || !isPasswordLongEnough) {
+      if (!isEmailFormatValid) {
+        emailInputRef.current?.focus();
+      } else {
+        passwordInputRef.current?.focus();
+      }
       return;
     }
 
@@ -70,6 +112,7 @@ export default function RegisterPage() {
     } catch (error) {
       if (error instanceof AuthApiError && error.status === 409) {
         setIsEmailTaken(true);
+        emailInputRef.current?.focus();
       } else if (error instanceof AuthApiError) {
         setServerError(error.message);
       } else {
@@ -114,7 +157,13 @@ export default function RegisterPage() {
                   }}
                 >
                   <Label>Email</Label>
-                  <Input placeholder="you@example.com" variant="secondary" />
+                  <Input
+                    ref={emailInputRef}
+                    placeholder="you@example.com"
+                    variant="secondary"
+                    autoComplete="email"
+                    inputMode="email"
+                  />
                   <FieldError>
                     {isEmailTaken
                       ? 'Этот email уже зарегистрирован'
@@ -126,12 +175,32 @@ export default function RegisterPage() {
                   isRequired
                   isInvalid={isPasswordInvalid}
                   name="password"
-                  type="password"
                   value={password}
                   onChange={setPassword}
                 >
                   <Label>Пароль</Label>
-                  <Input placeholder="Минимум 6 символов" variant="secondary" />
+                  <div className="relative">
+                    <Input
+                      ref={passwordInputRef}
+                      type={isPasswordVisible ? 'text' : 'password'}
+                      placeholder="Минимум 6 символов"
+                      variant="secondary"
+                      autoComplete="new-password"
+                      className="w-full pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setIsPasswordVisible((visible) => !visible)}
+                      className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted hover:text-foreground"
+                      aria-label={isPasswordVisible ? 'Скрыть пароль' : 'Показать пароль'}
+                    >
+                      {isPasswordVisible ? (
+                        <EyeOffIcon className="size-4" />
+                      ) : (
+                        <EyeIcon className="size-4" />
+                      )}
+                    </button>
+                  </div>
                   <FieldError>Пароль должен содержать минимум 6 символов</FieldError>
                 </TextField>
 
@@ -148,7 +217,7 @@ export default function RegisterPage() {
             </Card.Content>
 
             <Card.Footer className="mt-4 flex flex-col gap-3">
-              <Button className="w-full" isPending={isSubmitting} type="submit">
+              <Button className="w-full" size="lg" isPending={isSubmitting} type="submit">
                 {({ isPending }) => (
                   <>
                     {isPending ? <Spinner color="current" size="sm" /> : null}

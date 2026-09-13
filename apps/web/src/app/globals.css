@@ -22,10 +22,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
+/*
+ * Kept inside @layer base so it stays in Tailwind's cascade layers — an
+ * unlayered rule here would win over every Tailwind/HeroUI utility
+ * (px-4, py-2, gap-*, component internal padding, …) regardless of
+ * specificity, silently zeroing out spacing across the whole app.
+ */
+@layer base {
+  * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+  }
 }
 
 a {
