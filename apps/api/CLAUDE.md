@@ -166,13 +166,40 @@ guard) — there is no cross-user visibility.
 | `lint`              | `eslint .`                                                                          |
 | `typecheck`         | `tsc --noEmit -p tsconfig.json`                                                     |
 | `test`              | `vitest run` (`**/*.spec.ts`; passes with none — currently no unit specs, only e2e) |
-| `test:watch`        | `vitest`                                                                            |
-| `test:cov`          | coverage (v8)                                                                       |
+| `test:watch`        | `vitest` — reruns on file change                                                    |
+| `test:cov`          | `vitest run --coverage` (v8)                                                        |
+| `test:debug`        | `vitest --inspect-brk --no-file-parallelism` — attach a debugger                    |
 | `test:e2e`          | `vitest run --config ./vitest.config.e2e.ts`                                        |
 | `prisma:generate`   | `prisma generate` — regenerate the client from the schema                           |
 | `prisma:migrate`    | `prisma migrate dev` — create + apply a migration (local)                           |
 | `prisma:deploy`     | `prisma migrate deploy` — apply pending migrations (CI/prod)                        |
 | `prisma:studio`     | `prisma studio` — browse the DB                                                     |
+
+### Running tests
+
+- **Unit** (`*.spec.ts`, co-located with source) — `pnpm api test`. There
+  are currently none in this app (behavior is covered by the e2e specs
+  instead); the run still passes (`passWithNoTests: true` in
+  `vitest.config.ts`) rather than failing on an empty suite.
+- **E2E** (`test/*.e2e-spec.ts`, supertest against a real `Nest` app) —
+  `pnpm api test:e2e`. Requires the local Postgres to be up
+  (`docker compose up -d` from the repo root — see
+  [Database](../../CLAUDE.md#database)) and `apps/api/.env` populated (copy
+  `.env.example`); `test/setup-env.ts` loads it via `vitest.config.e2e.ts`'s
+  `setupFiles`. Each spec's `beforeEach` boots a fresh `TestingModule` from
+  `AppModule` and tears it down in `afterEach` — specs don't share app state,
+  but they do share the one Postgres database, so tests generate unique data
+  (e.g. `randomUUID()`-based emails) rather than relying on a clean table.
+- **Root `pnpm test`** (`turbo run test`) only runs the `test` task across
+  packages — it does **not** run `test:e2e`. E2E has no root-level alias and
+  no dedicated Turborepo task, so run it per-app: `pnpm api test:e2e`. Always
+  run both before considering API changes done — see
+  [Before you finish a change](../../CLAUDE.md#before-you-finish-a-change).
+- **Single file / pattern** — pass a path or name filter through to Vitest
+  after `--`, e.g. `pnpm api test:e2e -- auth` or
+  `pnpm api test:e2e -- test/auth.e2e-spec.ts`.
+- **Watch mode** — `pnpm api test:watch` (unit only; there's no
+  `test:e2e:watch` script).
 
 ## Config
 

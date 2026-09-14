@@ -48,6 +48,13 @@ pnpm api start:dev  # -> pnpm --filter @claudelar/api start:dev
 Run `pnpm lint`, `pnpm typecheck`, and `pnpm test` (or the app-scoped
 equivalents). Turborepo caches results, so reruns are cheap.
 
+`pnpm test` only runs each package's unit-test script — it does **not** run
+`apps/api`'s e2e suite (no root alias or Turborepo task for it). After
+changing `apps/api`, also run `pnpm api test:e2e` (needs the local Postgres
+up — see [Database](#database)); see
+[apps/api/CLAUDE.md#running-tests](apps/api/CLAUDE.md#running-tests) for
+details.
+
 ## Database
 
 - Local Postgres runs via Docker Compose (`docker-compose.yml` at the repo root, service `postgres`, image `postgres:17-alpine`).
