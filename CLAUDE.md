@@ -75,7 +75,9 @@ details.
   via `/hooks`.
 - **Git hooks** — Husky (`.husky/`), wired via `prepare` in the root
   `package.json` (`pnpm install` sets `core.hooksPath` automatically). The
-  `pre-commit` hook runs `pnpm lint && pnpm test`.
+  `pre-commit` hook runs `pnpm lint && pnpm test && pnpm api test:e2e` —
+  the local Postgres must be up (see [Database](#database)) and
+  `apps/api/.env` configured, or the e2e step (and the commit) fails.
 
 ## Conventions
 
