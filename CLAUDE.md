@@ -73,6 +73,9 @@ details.
 - **Auto-format hook** — `.claude/settings.json` runs `prettier --write` on every
   file Claude writes or edits (`PostToolUse` on `Write|Edit|MultiEdit`). Manage it
   via `/hooks`.
+- **Git hooks** — Husky (`.husky/`), wired via `prepare` in the root
+  `package.json` (`pnpm install` sets `core.hooksPath` automatically). The
+  `pre-commit` hook runs `pnpm lint && pnpm test`.
 
 ## Conventions
 

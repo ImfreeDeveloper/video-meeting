@@ -7,6 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "prepare": "husky",
     "dev": "turbo run dev",
     "build": "turbo run build",
     "start": "turbo run start",
@@ -24,6 +25,7 @@
     "@eslint/js": "^9.37.0",
     "eslint": "^9.37.0",
     "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
     "prettier": "^3.6.2",
     "turbo": "^2.5.8",
     "typescript": "^5.9.3",
