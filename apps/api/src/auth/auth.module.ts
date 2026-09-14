@@ -3,13 +3,11 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { JwtModule, type JwtSignOptions } from '@nestjs/jwt';
 import { AuthController } from './auth.controller.js';
 import { RegisterHandler } from './commands/handlers/register.handler.js';
-import { UserRegisteredHandler } from './events/handlers/user-registered.handler.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { LoginHandler } from './queries/handlers/login.handler.js';
 
 const CommandHandlers = [RegisterHandler];
 const QueryHandlers = [LoginHandler];
-const EventHandlers = [UserRegisteredHandler];
 
 @Module({
   imports: [
@@ -22,7 +20,7 @@ const EventHandlers = [UserRegisteredHandler];
     }),
   ],
   controllers: [AuthController],
-  providers: [...CommandHandlers, ...QueryHandlers, ...EventHandlers, JwtAuthGuard],
+  providers: [...CommandHandlers, ...QueryHandlers, JwtAuthGuard],
   exports: [JwtModule, JwtAuthGuard],
 })
 export class AuthModule {}
