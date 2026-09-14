@@ -10,7 +10,7 @@ export class AuthApiError extends Error {
   }
 }
 
-interface RegisterResponse {
+interface AccessTokenResponse {
   accessToken: string;
 }
 
@@ -18,8 +18,13 @@ interface ApiErrorBody {
   message?: string | string[];
 }
 
-export async function registerUser(email: string, password: string): Promise<RegisterResponse> {
-  const response = await fetch(`${API_URL}/auth/register`, {
+async function postCredentials(
+  path: string,
+  email: string,
+  password: string,
+  fallbackMessage: string,
+): Promise<AccessTokenResponse> {
+  const response = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -29,9 +34,17 @@ export async function registerUser(email: string, password: string): Promise<Reg
     const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
     const message = Array.isArray(body?.message)
       ? body.message.join(', ')
-      : (body?.message ?? 'Registration failed');
+      : (body?.message ?? fallbackMessage);
     throw new AuthApiError(message, response.status);
   }
 
-  return response.json() as Promise<RegisterResponse>;
+  return response.json() as Promise<AccessTokenResponse>;
+}
+
+export function registerUser(email: string, password: string): Promise<AccessTokenResponse> {
+  return postCredentials('/auth/register', email, password, 'Registration failed');
+}
+
+export function loginUser(email: string, password: string): Promise<AccessTokenResponse> {
+  return postCredentials('/auth/login', email, password, 'Login failed');
 }

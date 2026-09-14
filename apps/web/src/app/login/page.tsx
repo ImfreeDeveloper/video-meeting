@@ -16,37 +16,34 @@ import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type FormEvent } from 'react';
 import { EyeIcon, EyeOffIcon, VideoCameraIcon } from '@/components/icons';
-import { AuthApiError, registerUser } from '@/lib/auth-api';
+import { AuthApiError, loginUser } from '@/lib/auth-api';
 import { setAccessToken } from '@/lib/session';
 
 const EMAIL_PATTERN = /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i;
-const PASSWORD_MIN_LENGTH = 6;
 
-export default function RegisterPage() {
+export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isEmailTaken, setIsEmailTaken] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   const isEmailFormatValid = EMAIL_PATTERN.test(email);
-  const isPasswordLongEnough = password.length >= PASSWORD_MIN_LENGTH;
+  const isPasswordFilled = password.length > 0;
 
-  const isEmailInvalid = submitted && (!isEmailFormatValid || isEmailTaken);
-  const isPasswordInvalid = submitted && !isPasswordLongEnough;
+  const isEmailInvalid = submitted && !isEmailFormatValid;
+  const isPasswordInvalid = submitted && !isPasswordFilled;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitted(true);
-    setIsEmailTaken(false);
     setServerError(null);
 
-    if (!isEmailFormatValid || !isPasswordLongEnough) {
+    if (!isEmailFormatValid || !isPasswordFilled) {
       if (!isEmailFormatValid) {
         emailInputRef.current?.focus();
       } else {
@@ -57,18 +54,18 @@ export default function RegisterPage() {
 
     setIsSubmitting(true);
     try {
-      const { accessToken } = await registerUser(email, password);
+      const { accessToken } = await loginUser(email, password);
       setAccessToken(accessToken);
       router.push('/');
     } catch (error) {
-      if (error instanceof AuthApiError && error.status === 409) {
-        setIsEmailTaken(true);
-        emailInputRef.current?.focus();
+      if (error instanceof AuthApiError && error.status === 401) {
+        setServerError('Неверный email или пароль');
       } else if (error instanceof AuthApiError) {
         setServerError(error.message);
       } else {
         setServerError('Что-то пошло не так. Попробуйте ещё раз.');
       }
+      passwordInputRef.current?.focus();
     } finally {
       setIsSubmitting(false);
     }
@@ -89,8 +86,8 @@ export default function RegisterPage() {
 
         <Card className="w-full">
           <Card.Header>
-            <Card.Title>Создать аккаунт</Card.Title>
-            <Card.Description>Укажите email и пароль, чтобы начать</Card.Description>
+            <Card.Title>Вход в аккаунт</Card.Title>
+            <Card.Description>Введите email и пароль, чтобы продолжить</Card.Description>
           </Card.Header>
 
           <Form validationBehavior="aria" onSubmit={(event) => void handleSubmit(event)}>
@@ -102,10 +99,7 @@ export default function RegisterPage() {
                   name="email"
                   type="email"
                   value={email}
-                  onChange={(value) => {
-                    setEmail(value);
-                    setIsEmailTaken(false);
-                  }}
+                  onChange={setEmail}
                 >
                   <Label>Email</Label>
                   <Input
@@ -115,11 +109,7 @@ export default function RegisterPage() {
                     autoComplete="email"
                     inputMode="email"
                   />
-                  <FieldError>
-                    {isEmailTaken
-                      ? 'Этот email уже зарегистрирован'
-                      : 'Введите корректный email адрес'}
-                  </FieldError>
+                  <FieldError>Введите корректный email адрес</FieldError>
                 </TextField>
 
                 <TextField
@@ -134,9 +124,9 @@ export default function RegisterPage() {
                     <Input
                       ref={passwordInputRef}
                       type={isPasswordVisible ? 'text' : 'password'}
-                      placeholder="Минимум 6 символов"
+                      placeholder="Введите пароль"
                       variant="secondary"
-                      autoComplete="new-password"
+                      autoComplete="current-password"
                       className="w-full pr-10"
                     />
                     <button
@@ -152,14 +142,14 @@ export default function RegisterPage() {
                       )}
                     </button>
                   </div>
-                  <FieldError>Пароль должен содержать минимум 6 символов</FieldError>
+                  <FieldError>Введите пароль</FieldError>
                 </TextField>
 
                 {serverError ? (
                   <Alert status="danger">
                     <Alert.Indicator />
                     <Alert.Content>
-                      <Alert.Title>Не удалось создать аккаунт</Alert.Title>
+                      <Alert.Title>Не удалось войти</Alert.Title>
                       <Alert.Description>{serverError}</Alert.Description>
                     </Alert.Content>
                   </Alert>
@@ -172,14 +162,14 @@ export default function RegisterPage() {
                 {({ isPending }) => (
                   <>
                     {isPending ? <Spinner color="current" size="sm" /> : null}
-                    {isPending ? 'Создание аккаунта…' : 'Создать аккаунт'}
+                    {isPending ? 'Выполняется вход…' : 'Войти'}
                   </>
                 )}
               </Button>
               <p className="text-center text-sm text-muted">
-                Уже есть аккаунт?{' '}
-                <NextLink className={linkVariants().base()} href="/login">
-                  Войти
+                Ещё нет аккаунта?{' '}
+                <NextLink className={linkVariants().base()} href="/register">
+                  Зарегистрироваться
                 </NextLink>
               </p>
             </Card.Footer>
