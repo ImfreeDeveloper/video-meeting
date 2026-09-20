@@ -220,3 +220,7 @@ When a change alters this app's architecture, update the docs in the same commit
 new/removed module or changed module boundaries, a new script, a new env var or
 config, or a changed port → update this file (and `.env.example` / the root
 `CLAUDE.md` + `README.md` when the change is visible from outside the app).
+
+## File upload
+
+Use this reasearch for it: @research/research-meeting-upload
