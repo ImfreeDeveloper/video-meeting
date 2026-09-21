@@ -4,10 +4,18 @@ import { Alert, Button, Card, Label, ProgressBar, Spinner } from '@heroui/react'
 import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 import { use, useEffect, useRef, useState } from 'react';
-import { ArrowLeftIcon, PaperclipIcon, UploadIcon } from '@/components/icons';
+import {
+  ArrowLeftIcon,
+  DownloadIcon,
+  PaperclipIcon,
+  TrashIcon,
+  UploadIcon,
+} from '@/components/icons';
 import { ApiError } from '@/lib/api-error';
 import { fetchMeeting, type Meeting } from '@/lib/meeting-api';
 import {
+  deleteMeetingFile,
+  downloadMeetingFile,
   listMeetingFiles,
   MeetingFileApiError,
   uploadMeetingFile,
@@ -71,6 +79,26 @@ function uploadErrorMessage(error: unknown): string {
   return 'Не удалось загрузить файл.';
 }
 
+type FileAction = 'download' | 'delete';
+
+type FileActionState =
+  | { action: FileAction; status: 'pending' }
+  | { action: FileAction; status: 'error'; message: string };
+
+function fileActionErrorMessage(error: unknown, action: FileAction): string {
+  const fallback = action === 'download' ? 'Не удалось скачать файл.' : 'Не удалось удалить файл.';
+  if (error instanceof MeetingFileApiError) {
+    if (error.status === 404) {
+      return 'Файл больше не существует. Обновите страницу.';
+    }
+    if (error.status === 0) {
+      return 'Ошибка сети. Проверьте подключение и попробуйте снова.';
+    }
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
 export default function MeetingPage(props: PageProps<'/meeting/[id]'>) {
   const { id } = use(props.params);
   const router = useRouter();
@@ -79,6 +107,7 @@ export default function MeetingPage(props: PageProps<'/meeting/[id]'>) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [files, setFiles] = useState<MeetingFile[]>([]);
   const [uploadState, setUploadState] = useState<UploadState>({ phase: 'idle' });
+  const [fileActions, setFileActions] = useState<Record<string, FileActionState>>({});
   const [loadedId, setLoadedId] = useState(id);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -91,6 +120,7 @@ export default function MeetingPage(props: PageProps<'/meeting/[id]'>) {
     setLoadedId(id);
     setStatus('loading');
     setUploadState({ phase: 'idle' });
+    setFileActions({});
   }
 
   useEffect(() => {
@@ -146,6 +176,59 @@ export default function MeetingPage(props: PageProps<'/meeting/[id]'>) {
       })
       .catch((error: unknown) => {
         setUploadState({ phase: 'error', message: uploadErrorMessage(error) });
+      });
+  };
+
+  const clearFileAction = (fileId: string) => {
+    setFileActions((current) => {
+      const next = { ...current };
+      delete next[fileId];
+      return next;
+    });
+  };
+
+  const handleDownload = (file: MeetingFile) => {
+    setFileActions((current) => ({
+      ...current,
+      [file.id]: { action: 'download', status: 'pending' },
+    }));
+
+    downloadMeetingFile(session.token, id, file)
+      .then(() => clearFileAction(file.id))
+      .catch((error: unknown) => {
+        setFileActions((current) => ({
+          ...current,
+          [file.id]: {
+            action: 'download',
+            status: 'error',
+            message: fileActionErrorMessage(error, 'download'),
+          },
+        }));
+      });
+  };
+
+  const handleDelete = (file: MeetingFile) => {
+    if (!window.confirm(`Удалить файл «${file.filename}»?`)) return;
+
+    setFileActions((current) => ({
+      ...current,
+      [file.id]: { action: 'delete', status: 'pending' },
+    }));
+
+    deleteMeetingFile(session.token, id, file.id)
+      .then(() => {
+        setFiles((current) => current.filter((f) => f.id !== file.id));
+        clearFileAction(file.id);
+      })
+      .catch((error: unknown) => {
+        setFileActions((current) => ({
+          ...current,
+          [file.id]: {
+            action: 'delete',
+            status: 'error',
+            message: fileActionErrorMessage(error, 'delete'),
+          },
+        }));
       });
   };
 
@@ -248,21 +331,69 @@ export default function MeetingPage(props: PageProps<'/meeting/[id]'>) {
                   </p>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {sortedFiles.map((file) => (
-                      <div
-                        key={file.id}
-                        className="flex items-center gap-3 rounded-xl border border-default px-4 py-3"
-                      >
-                        <PaperclipIcon className="size-4 shrink-0 text-muted" />
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">{file.filename}</p>
-                          <p className="text-xs text-muted">
-                            {fileTypeLabel(file)} · {formatFileSize(file.size)} ·{' '}
-                            {dateTimeFormatter.format(new Date(file.createdAt))}
-                          </p>
+                    {sortedFiles.map((file) => {
+                      const action = fileActions[file.id];
+                      const isPending = action?.status === 'pending';
+
+                      return (
+                        <div
+                          key={file.id}
+                          className="flex flex-col gap-2 rounded-xl border border-default px-4 py-3"
+                        >
+                          <div className="flex items-center gap-3">
+                            <PaperclipIcon className="size-4 shrink-0 text-muted" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium text-foreground">
+                                {file.filename}
+                              </p>
+                              <p className="text-xs text-muted">
+                                {fileTypeLabel(file)} · {formatFileSize(file.size)} ·{' '}
+                                {dateTimeFormatter.format(new Date(file.createdAt))}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <Button
+                                isIconOnly
+                                aria-label="Скачать файл"
+                                variant="ghost"
+                                size="sm"
+                                isDisabled={isPending}
+                                onPress={() => handleDownload(file)}
+                              >
+                                {isPending && action.action === 'download' ? (
+                                  <Spinner size="sm" />
+                                ) : (
+                                  <DownloadIcon className="size-4" />
+                                )}
+                              </Button>
+                              <Button
+                                isIconOnly
+                                aria-label="Удалить файл"
+                                variant="danger"
+                                size="sm"
+                                isDisabled={isPending}
+                                onPress={() => handleDelete(file)}
+                              >
+                                {isPending && action.action === 'delete' ? (
+                                  <Spinner size="sm" color="current" />
+                                ) : (
+                                  <TrashIcon className="size-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+
+                          {action?.status === 'error' ? (
+                            <Alert status="danger">
+                              <Alert.Indicator />
+                              <Alert.Content>
+                                <Alert.Description>{action.message}</Alert.Description>
+                              </Alert.Content>
+                            </Alert>
+                          ) : null}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </Card.Content>

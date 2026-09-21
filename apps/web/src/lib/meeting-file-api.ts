@@ -39,6 +39,54 @@ export async function listMeetingFiles(
 }
 
 /**
+ * Fetches the file as a blob and triggers a browser download via a
+ * throwaway object URL, rather than a plain `<a href>` — the access token
+ * lives in localStorage, not a cookie, so a direct link can't authenticate
+ * the request (see research/research-meeting-upload.md #8).
+ */
+export async function downloadMeetingFile(
+  accessToken: string,
+  meetingId: string,
+  file: MeetingFile,
+): Promise<void> {
+  const response = await fetch(`${API_URL}/meeting/${meetingId}/files/${file.id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new MeetingFileApiError('Failed to download file', response.status);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export async function deleteMeetingFile(
+  accessToken: string,
+  meetingId: string,
+  fileId: string,
+): Promise<void> {
+  const response = await fetch(`${API_URL}/meeting/${meetingId}/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new MeetingFileApiError('Failed to delete file', response.status);
+  }
+}
+
+/**
  * Uses XMLHttpRequest, not fetch, because `fetch` has no cross-browser way
  * to report upload (request body) progress — only `xhr.upload.onprogress`
  * does. Never set a Content-Type header manually: FormData + XHR set
