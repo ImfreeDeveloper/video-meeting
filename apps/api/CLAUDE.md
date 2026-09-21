@@ -174,8 +174,11 @@ meeting 404s the same way `GET /meeting/:id` does.
   disk-write requirement in the plan). The handler then verifies meeting
   ownership, moves the file into its final `<meetingId>/` directory, and
   writes the `MeetingFile` row (original filename, MIME type, size, the
-  storage path _relative_ to `FILE_STORAGE_DIR`, `uploadedById`). Ownership
-  failure cleans up the temp file before rethrowing.
+  storage path _relative_ to `FILE_STORAGE_DIR`, `uploadedById`). Ownership,
+  move (`mkdir`/`rename`), and DB-insert failures each clean up whatever file
+  is on disk at that point (temp file, or the moved file if the insert is
+  what failed) before rethrowing — no path fails silently into an orphaned
+  file.
 - Supported types: audio (`.mp3`, `.wav`, `.m4a`), video (`.mp4`, `.mov`),
   documents (`.pdf`, `.docx`, `.txt`) — both extension and MIME type must
   match one allowlist row (`meeting-file/config/file-upload.config.ts`).
@@ -239,7 +242,7 @@ meeting 404s the same way `GET /meeting/:id` does.
 
 ## Config
 
-- `PORT` (default `3001`), `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGIN` (default `http://localhost:3000`, the origin allowed to call the API — `@claudelar/web`'s dev server), `FILE_STORAGE_DIR` (default `./storage/uploads`, where meeting file uploads are stored on disk), `MAX_FILE_SIZE_BYTES` (default `524288000` / 500 MiB, max size of a single meeting file upload) — see `.env.example`. No `ConfigModule`; `dotenv/config` loads `.env` at the top of `main.ts` (and in `test/setup-env.ts` for e2e), `main.ts`/services read `process.env` directly. `FILE_STORAGE_DIR`/`MAX_FILE_SIZE_BYTES` are read lazily (`meeting-file/config/file-upload.config.ts`), not cached at import time, so tests can override them before compiling `AppModule`.
+- `PORT` (default `3001`), `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGIN` (default `http://localhost:3000`, the origin allowed to call the API — `@claudelar/web`'s dev server), `FILE_STORAGE_DIR` (default `./storage/uploads`, where meeting file uploads are stored on disk), `MAX_FILE_SIZE_BYTES` (default `524288000` / 500 MiB, max size of a single meeting file upload) — see `.env.example`. No `ConfigModule`; `dotenv/config` loads `.env` at the top of `main.ts` (and in `test/setup-env.ts` for e2e), `main.ts`/services read `process.env` directly. `FILE_STORAGE_DIR` is resolved fresh on every upload (`meeting-file/config/file-upload.config.ts`); `MAX_FILE_SIZE_BYTES` is only read once, when that module is first imported (multer bakes it into the instance it builds) — either way, tests must set both before compiling `AppModule`, which `test/meeting-file.e2e-spec.ts` already does. `MAX_FILE_SIZE_BYTES` is also clamped to Postgres `Int`'s range (~2 GiB), since `MeetingFile.size` is stored as an `Int`.
 - `nest-cli.json` — `sourceRoot: src`, `deleteOutDir` on build.
 
 ## Conventions

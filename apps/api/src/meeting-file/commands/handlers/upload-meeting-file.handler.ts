@@ -29,20 +29,34 @@ export class UploadMeetingFileHandler implements ICommandHandler<
       throw error;
     }
 
-    const meetingDir = join(resolveStorageRoot(), meetingId);
-    await mkdir(meetingDir, { recursive: true });
     const storagePath = join(meetingId, file.filename);
-    await rename(file.path, join(resolveStorageRoot(), storagePath));
+    const finalPath = join(resolveStorageRoot(), storagePath);
 
-    return this.prisma.meetingFile.create({
-      data: {
-        meetingId,
-        filename: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        storagePath,
-        uploadedById: ownerId,
-      },
-    });
+    try {
+      await mkdir(join(resolveStorageRoot(), meetingId), { recursive: true });
+      await rename(file.path, finalPath);
+    } catch (error) {
+      await unlink(file.path).catch(() => {});
+      throw error;
+    }
+
+    try {
+      return await this.prisma.meetingFile.create({
+        data: {
+          meetingId,
+          filename: file.originalname,
+          mimeType: file.mimetype,
+          size: file.size,
+          storagePath,
+          uploadedById: ownerId,
+        },
+      });
+    } catch (error) {
+      // The file already moved into its final <meetingId>/ location above —
+      // without this, a failed insert (e.g. a transient DB error) leaves it
+      // orphaned on disk with no MeetingFile row pointing at it.
+      await unlink(finalPath).catch(() => {});
+      throw error;
+    }
   }
 }

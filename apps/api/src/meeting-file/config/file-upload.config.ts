@@ -22,20 +22,30 @@ const ALLOWED_TYPES: Record<string, string[]> = {
 
 const DEFAULT_STORAGE_DIR = './storage/uploads';
 const DEFAULT_MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024; // 500 MiB, generous enough for short video clips
+const MAX_INT32 = 2_147_483_647; // MeetingFile.size is a Postgres Int column — can't hold more than this
 
 /**
- * Read lazily (not cached at module load) so tests can point storage at a
- * throwaway directory by setting env vars before the app is compiled.
+ * Read fresh on every call — used inside multer's per-request `destination`
+ * callback below, so a directory picked in tests by setting the env var
+ * before compiling AppModule is honored on every subsequent upload.
  */
 export function resolveStorageRoot(): string {
   const dir = process.env.FILE_STORAGE_DIR ?? DEFAULT_STORAGE_DIR;
   return isAbsolute(dir) ? dir : join(process.cwd(), dir);
 }
 
+/**
+ * Unlike resolveStorageRoot(), this is only read once — when
+ * meetingFileMulterOptions() below is called at controller-decoration time —
+ * because multer bakes `limits.fileSize` into the instance it constructs.
+ * Tests must set MAX_FILE_SIZE_BYTES before that module is first imported,
+ * same as the existing e2e specs already do.
+ */
 export function maxFileSizeBytes(): number {
   const raw = process.env.MAX_FILE_SIZE_BYTES;
   const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_FILE_SIZE_BYTES;
+  const value = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_FILE_SIZE_BYTES;
+  return Math.min(value, MAX_INT32);
 }
 
 function tempUploadDir(): string {
