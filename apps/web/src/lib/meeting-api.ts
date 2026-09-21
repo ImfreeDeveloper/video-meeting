@@ -1,3 +1,5 @@
+import { ApiError } from '@/lib/api-error';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export interface Meeting {
@@ -10,12 +12,9 @@ export interface Meeting {
   updatedAt: string;
 }
 
-export class MeetingApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message);
+export class MeetingApiError extends ApiError {
+  constructor(message: string, status: number) {
+    super(message, status);
     this.name = 'MeetingApiError';
   }
 }
@@ -30,4 +29,16 @@ export async function fetchMeetings(accessToken: string): Promise<Meeting[]> {
   }
 
   return response.json() as Promise<Meeting[]>;
+}
+
+export async function fetchMeeting(accessToken: string, id: string): Promise<Meeting> {
+  const response = await fetch(`${API_URL}/meeting/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new MeetingApiError('Failed to load meeting', response.status);
+  }
+
+  return response.json() as Promise<Meeting>;
 }
