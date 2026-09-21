@@ -201,6 +201,19 @@ describe('Meeting files (e2e)', () => {
 
       await uploadFile(token, randomUUID(), Buffer.from('x'), 'note.txt', 'text/plain').expect(404);
     });
+
+    it('accepts a MIME type that differs only in case from the allowlist', async () => {
+      const token = await registerAndGetToken();
+      const meetingId = await createMeeting(token);
+
+      await uploadFile(
+        token,
+        meetingId,
+        Buffer.from('audio'),
+        'recording.mp3',
+        'Audio/MPEG',
+      ).expect(201);
+    });
   });
 
   describe('GET /meeting/:meetingId/files', () => {
@@ -264,6 +277,24 @@ describe('Meeting files (e2e)', () => {
       expect(response.headers['content-type']).toContain('audio/mpeg');
       expect(response.headers['content-disposition']).toContain('recording.mp3');
       expect((response.body as Buffer).equals(buffer)).toBe(true);
+    });
+
+    it('encodes a non-ASCII filename per RFC 6266 in Content-Disposition', async () => {
+      const token = await registerAndGetToken();
+      const meetingId = await createMeeting(token);
+      const filename = 'réunion notes.txt';
+      const fileId = await uploadedFileId(
+        token,
+        meetingId,
+        Buffer.from('x'),
+        filename,
+        'text/plain',
+      );
+
+      const response = await downloadFile(token, meetingId, fileId).expect(200);
+
+      const disposition = response.headers['content-disposition'] as string;
+      expect(disposition).toContain(`filename*=UTF-8''${encodeURIComponent(filename)}`);
     });
 
     it('rejects a request without an access token', async () => {

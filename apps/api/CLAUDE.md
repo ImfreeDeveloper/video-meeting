@@ -17,7 +17,7 @@ NestJS 12 HTTP API. See the repo-root `CLAUDE.md` for monorepo-wide setup.
 ```
 src/
   main.ts               bootstrap; listens on process.env.PORT ?? 3001; loads .env; global ValidationPipe
-  app.module.ts         root module — no controllers/providers of its own, just wires up feature modules (imports PrismaModule, UsersModule, AuthModule, MeetingModule)
+  app.module.ts         root module — no controllers/providers of its own, just wires up feature modules (imports PrismaModule, UsersModule, AuthModule, MeetingModule, MeetingFileModule)
   prisma/
     prisma.module.ts    @Global() module exporting PrismaService
     prisma.service.ts   PrismaClient (pg driver adapter), connects/disconnects with the Nest lifecycle
@@ -63,6 +63,8 @@ src/
   meeting-file/
     meeting-file.module.ts       imports CqrsModule + AuthModule; does NOT import MeetingModule (reaches it via QueryBus, same as auth/ → users/)
     meeting-file.controller.ts   POST/GET /meeting/:meetingId/files, GET/DELETE /meeting/:meetingId/files/:fileId — all behind JwtAuthGuard, dispatch only
+    ownership.util.ts    assertMeetingOwnership(queryBus, ownerId, meetingId) — the GetMeetingQuery dispatch shared by all four handlers below
+    storage.util.ts      unlinkIfExists(path) — deletes a file, tolerating it already being gone (ENOENT); shared by the upload and delete handlers
     config/
       file-upload.config.ts   MIME/extension allowlist, FILE_STORAGE_DIR/MAX_FILE_SIZE_BYTES resolution, the multer options factory
     commands/
@@ -188,12 +190,15 @@ meeting 404s the same way `GET /meeting/:id` does.
   file.
 - Supported types: audio (`.mp3`, `.wav`, `.m4a`), video (`.mp4`, `.mov`),
   documents (`.pdf`, `.docx`, `.txt`) — both extension and MIME type must
-  match one allowlist row (`meeting-file/config/file-upload.config.ts`).
+  match one allowlist row, case-insensitively
+  (`meeting-file/config/file-upload.config.ts`). `defParamCharset: 'utf8'` is
+  set explicitly — busboy's default (`latin1`) mis-decodes non-ASCII
+  filenames clients send as raw UTF-8 bytes in the multipart part header.
 - No token, or an invalid/expired one → `401`. Unsupported format → `415`.
   Oversized file → `413`. Missing/nonexistent/another user's meeting → `404`.
 - `GET /meeting/:meetingId/files` → `ListMeetingFilesQuery` → `ListMeetingFilesHandler` → `200 <MeetingFile[]>`, ordered by `createdAt` ascending. Only the meeting owner; empty array if the meeting has no files.
-- `GET /meeting/:meetingId/files/:fileId` → `GetMeetingFileQuery` → `GetMeetingFileHandler` → `200`, streamed via `StreamableFile` (`fs.createReadStream`, never buffered into memory) with `Content-Type` set to the stored `mimeType` and `Content-Disposition: attachment; filename="..."` set to the original `filename`. A missing file id, or a file belonging to another user's meeting, 404s the same way as an unknown/foreign meeting id.
-- `DELETE /meeting/:meetingId/files/:fileId` → `DeleteMeetingFileCommand` → `DeleteMeetingFileHandler` → `204`. Deletes disk first, then the DB row — `unlink` is idempotent to `ENOENT` (already-missing file doesn't block cleaning up the row), but a different disk error aborts before the row is deleted, so a temporarily-unreachable file never loses its metadata. Once deleted, `GET .../files/:fileId` 404s the same as a file that never existed.
+- `GET /meeting/:meetingId/files/:fileId` → `GetMeetingFileQuery` → `GetMeetingFileHandler` → `200`, streamed via `StreamableFile` (`fs.createReadStream`, never buffered into memory) with `Content-Type` set to the stored `mimeType` and an RFC 6266 `Content-Disposition` (ASCII fallback in `filename=`, the real name in `filename*=UTF-8''...`) set from the original `filename`. A missing file id, or a file belonging to another user's meeting, 404s the same way as an unknown/foreign meeting id. A custom `StreamableFile` error handler turns a read-stream `ENOENT` (disk/DB briefly out of sync, e.g. racing a concurrent delete) into a `404` instead of leaking the absolute file path via the default handler's `400`.
+- `DELETE /meeting/:meetingId/files/:fileId` → `DeleteMeetingFileCommand` → `DeleteMeetingFileHandler` → `204`. Deletes disk first, then the DB row — `unlink` is idempotent to `ENOENT` (already-missing file doesn't block cleaning up the row), but a different disk error aborts before the row is deleted, so a temporarily-unreachable file never loses its metadata. A concurrent delete of the same file (a Prisma `P2025` on the row-delete, meaning something else already removed it) is treated as success rather than a `500` — the end state either caller wanted. Once deleted, `GET .../files/:fileId` 404s the same as a file that never existed.
 
 ### Database (Prisma)
 

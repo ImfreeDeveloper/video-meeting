@@ -1,11 +1,14 @@
-import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NotFoundException } from '@nestjs/common';
 import { type ICommandHandler, CommandHandler, QueryBus } from '@nestjs/cqrs';
-import { GetMeetingQuery } from '../../../meeting/queries/get-meeting.query.js';
+import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { resolveStorageRoot } from '../../config/file-upload.config.js';
+import { assertMeetingOwnership } from '../../ownership.util.js';
+import { unlinkIfExists } from '../../storage.util.js';
 import { DeleteMeetingFileCommand } from '../delete-meeting-file.command.js';
+
+const RECORD_NOT_FOUND = 'P2025';
 
 @CommandHandler(DeleteMeetingFileCommand)
 export class DeleteMeetingFileHandler implements ICommandHandler<DeleteMeetingFileCommand, void> {
@@ -15,7 +18,7 @@ export class DeleteMeetingFileHandler implements ICommandHandler<DeleteMeetingFi
   ) {}
 
   async execute(command: DeleteMeetingFileCommand): Promise<void> {
-    await this.queryBus.execute(new GetMeetingQuery(command.ownerId, command.meetingId));
+    await assertMeetingOwnership(this.queryBus, command.ownerId, command.meetingId);
 
     const file = await this.prisma.meetingFile.findFirst({
       where: { id: command.fileId, meetingId: command.meetingId },
@@ -29,14 +32,21 @@ export class DeleteMeetingFileHandler implements ICommandHandler<DeleteMeetingFi
     // file already being gone, abort before deleting the row — a
     // temporarily-unreachable file with a valid DB record beats an
     // orphaned record pointing at nothing.
-    await unlink(join(resolveStorageRoot(), file.storagePath)).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code !== 'ENOENT') {
-          throw error;
-        }
-      },
-    );
+    await unlinkIfExists(join(resolveStorageRoot(), file.storagePath));
 
-    await this.prisma.meetingFile.delete({ where: { id: file.id } });
+    try {
+      await this.prisma.meetingFile.delete({ where: { id: file.id } });
+    } catch (error) {
+      // A concurrent DELETE for the same file already won the race between
+      // our findFirst above and this delete — the end state (no row) is
+      // what we wanted anyway, so treat it as success rather than a 500.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === RECORD_NOT_FOUND
+      ) {
+        return;
+      }
+      throw error;
+    }
   }
 }

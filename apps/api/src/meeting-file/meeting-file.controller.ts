@@ -27,6 +27,28 @@ import { meetingFileMulterOptions, resolveStorageRoot } from './config/file-uplo
 import { GetMeetingFileQuery } from './queries/get-meeting-file.query.js';
 import { ListMeetingFilesQuery } from './queries/list-meeting-files.query.js';
 
+/**
+ * RFC 6266: only `filename*=UTF-8''...` is percent-decoded by clients — the
+ * plain `filename=` parameter is a same-request ASCII fallback for clients
+ * that don't understand the extended form, not a place to put percent-encoding.
+ */
+function contentDispositionHeader(filename: string): string {
+  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+/**
+ * Matches @nestjs/common's StreamableHandlerResponse shape (not itself
+ * publicly exported from the package root) — just enough of Express's
+ * Response for StreamableFile.setErrorHandler's second argument.
+ */
+interface StreamResponse {
+  readonly headersSent: boolean;
+  statusCode: number;
+  send(body: string): void;
+  end(): void;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('meeting/:meetingId/files')
 export class MeetingFileController {
@@ -75,10 +97,34 @@ export class MeetingFileController {
 
     res.set({
       'Content-Type': file.mimeType,
-      'Content-Disposition': `attachment; filename="${encodeURIComponent(file.filename)}"`,
+      'Content-Disposition': contentDispositionHeader(file.filename),
     });
 
-    return new StreamableFile(createReadStream(join(resolveStorageRoot(), file.storagePath)));
+    const stream = new StreamableFile(
+      createReadStream(join(resolveStorageRoot(), file.storagePath)),
+    );
+
+    // The DB row can outlive the file on disk for a moment (e.g. a delete
+    // racing this download between the query above and the read below).
+    // Without this, a read-stream ENOENT falls through to StreamableFile's
+    // default handler, which leaks the absolute file path in the response
+    // body and answers 400 instead of 404.
+    stream.setErrorHandler((error: Error, response: StreamResponse) => {
+      if (response.headersSent) {
+        response.end();
+        return;
+      }
+      const notFound = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      response.statusCode = notFound ? HttpStatus.NOT_FOUND : HttpStatus.INTERNAL_SERVER_ERROR;
+      response.send(
+        JSON.stringify({
+          statusCode: response.statusCode,
+          message: notFound ? 'File not found' : 'Internal server error',
+        }),
+      );
+    });
+
+    return stream;
   }
 
   @Delete(':fileId')
