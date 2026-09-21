@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { extname, isAbsolute, join } from 'node:path';
-import { UnsupportedMediaTypeException } from '@nestjs/common';
+import { Logger, UnsupportedMediaTypeException } from '@nestjs/common';
 import type { MulterOptions } from '@nestjs/platform-express/multer/interfaces/multer-options.interface.js';
 import { diskStorage } from 'multer';
+
+const logger = new Logger('MeetingFileUpload');
 
 /**
  * Allowed extension -> MIME type(s), per the PRD's supported format list.
@@ -45,7 +47,15 @@ export function maxFileSizeBytes(): number {
   const raw = process.env.MAX_FILE_SIZE_BYTES;
   const parsed = raw ? Number(raw) : NaN;
   const value = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_FILE_SIZE_BYTES;
-  return Math.min(value, MAX_INT32);
+
+  if (value > MAX_INT32) {
+    logger.warn(
+      `MAX_FILE_SIZE_BYTES=${value} exceeds what MeetingFile.size (a Postgres Int column) can store; clamped to ${MAX_INT32}.`,
+    );
+    return MAX_INT32;
+  }
+
+  return value;
 }
 
 function tempUploadDir(): string {
@@ -61,11 +71,16 @@ function tempUploadDir(): string {
  */
 export function meetingFileMulterOptions(): MulterOptions {
   return {
+    // Busboy's default (latin1) mis-decodes non-ASCII filenames that
+    // clients send as raw UTF-8 bytes in the multipart Content-Disposition
+    // header — this makes it interpret them correctly instead.
+    defParamCharset: 'utf8',
     storage: diskStorage({
       destination: (_req, _file, cb) => {
         const dir = tempUploadDir();
-        mkdirSync(dir, { recursive: true });
-        cb(null, dir);
+        mkdir(dir, { recursive: true })
+          .then(() => cb(null, dir))
+          .catch((error: Error) => cb(error, dir));
       },
       filename: (_req, file, cb) => {
         cb(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`);
@@ -74,8 +89,9 @@ export function meetingFileMulterOptions(): MulterOptions {
     limits: { fileSize: maxFileSizeBytes(), files: 1 },
     fileFilter: (_req, file, cb) => {
       const ext = extname(file.originalname).toLowerCase();
+      const mimetype = file.mimetype.toLowerCase();
       const allowedMimeTypes = ALLOWED_TYPES[ext];
-      if (!allowedMimeTypes || !allowedMimeTypes.includes(file.mimetype)) {
+      if (!allowedMimeTypes || !allowedMimeTypes.includes(mimetype)) {
         cb(
           new UnsupportedMediaTypeException(`Unsupported file type: ${ext || file.mimetype}`),
           false,
