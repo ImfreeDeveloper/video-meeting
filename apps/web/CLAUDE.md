@@ -17,12 +17,28 @@ monorepo-wide setup.
 
 ```
 src/app/
-  layout.tsx      root layout (fonts, <html>)
-  page.tsx        route: /
+  layout.tsx            root layout (fonts, <html>)
+  page.tsx               route: / — the authenticated user's meeting list; each meeting links to /meeting/[id]
   globals.css
   *.module.css
-public/           static assets
-next.config.ts    currently empty
+  login/
+    layout.tsx           metadata (title) only
+    page.tsx              route: /login
+  register/
+    layout.tsx            metadata (title) only
+    page.tsx               route: /register
+  meeting/[id]/
+    layout.tsx             metadata (title) only
+    page.tsx                route: /meeting/[id] — meeting detail: file upload block (progress, error states) + attached files list
+src/lib/
+  session.ts              localStorage access token, JWT payload decoding, and the shared client-side auth-gate (readSession/Session) every authenticated page uses
+  auth-api.ts              register/login against @claudelar/api
+  meeting-api.ts           fetch one/many meetings
+  meeting-file-api.ts      list a meeting's files; upload one via XMLHttpRequest (progress events; fetch can't report upload progress)
+src/components/
+  icons.tsx                inline SVG icon components (stroke-based, Lucide-style) — add new ones here rather than pulling in an icon package
+public/                   static assets
+next.config.ts            currently empty
 ```
 
 ## Commands (from `apps/web`, or `pnpm web <script>` from root)
@@ -48,6 +64,7 @@ There is no test setup in this app yet.
 - Keep the client bundle small: fetch data in Server Components; push `'use client'` to the leaves.
 - Use `next/image`, `next/font`, and `next/link` rather than raw equivalents (enforced by `eslint-config-next` core-web-vitals).
 - The `vercel-react-best-practices` skill applies to non-trivial React/Next work.
+- File pickers use a hidden native `<input type="file">` triggered via a `ref` + a HeroUI `Button`'s `onPress` (see `meeting/[id]/page.tsx`), not `react-aria-components`' `FileTrigger` — adding `react-aria-components` as a direct dependency hits a peer-dependency resolution bug in this repo's pnpm setup (it's already a transitive peer of `@heroui/react`, and pnpm links the wrong `.pnpm` store path when it's also listed directly). Reset the input's `value` after reading `files` so the same filename can be re-selected.
 
 ## Definition of done for UI changes
 
@@ -87,3 +104,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Test user
+
+Login: user1@gmail.com
+Password: Password1!

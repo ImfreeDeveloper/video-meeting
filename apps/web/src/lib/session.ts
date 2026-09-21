@@ -37,3 +37,21 @@ export function decodeSessionUser(token: string): SessionUser | null {
     return null;
   }
 }
+
+export interface Session {
+  token: string;
+  email: string;
+}
+
+/**
+ * `null` means "no session" — either no token is stored, or it's malformed.
+ * Shared by every authenticated page's client-side auth gate.
+ */
+export function readSession(): Session | null {
+  if (typeof window === 'undefined') return null;
+  const token = getAccessToken();
+  if (!token) return null;
+  const sessionUser = decodeSessionUser(token);
+  if (!sessionUser) return null;
+  return { token, email: sessionUser.email };
+}

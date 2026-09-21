@@ -31,3 +31,15 @@ export async function fetchMeetings(accessToken: string): Promise<Meeting[]> {
 
   return response.json() as Promise<Meeting[]>;
 }
+
+export async function fetchMeeting(accessToken: string, id: string): Promise<Meeting> {
+  const response = await fetch(`${API_URL}/meeting/${id}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw new MeetingApiError('Failed to load meeting', response.status);
+  }
+
+  return response.json() as Promise<Meeting>;
+}

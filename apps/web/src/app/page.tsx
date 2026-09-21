@@ -1,11 +1,12 @@
 'use client';
 
 import { Alert, Button, Card, Spinner } from '@heroui/react';
+import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { VideoCameraIcon } from '@/components/icons';
 import { fetchMeetings, MeetingApiError, type Meeting } from '@/lib/meeting-api';
-import { clearAccessToken, decodeSessionUser, getAccessToken } from '@/lib/session';
+import { clearAccessToken, readSession, type Session } from '@/lib/session';
 
 const RECENT_MEETINGS_LIMIT = 3;
 
@@ -19,20 +20,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat('ru-RU', {
 
 function formatMeetingTime(meeting: Meeting): string {
   return `${dateTimeFormatter.format(new Date(meeting.startTime))} – ${dateTimeFormatter.format(new Date(meeting.endTime))}`;
-}
-
-interface Session {
-  token: string;
-  email: string;
-}
-
-function readSession(): Session | null {
-  if (typeof window === 'undefined') return null;
-  const token = getAccessToken();
-  if (!token) return null;
-  const sessionUser = decodeSessionUser(token);
-  if (!sessionUser) return null;
-  return { token, email: sessionUser.email };
 }
 
 type PageStatus = 'loading' | 'ready' | 'error';
@@ -119,12 +106,18 @@ export default function Home() {
                 <h2 className="text-lg font-semibold text-foreground">Последние встречи</h2>
                 <div className="grid gap-3 sm:grid-cols-3">
                   {recentMeetings.map((meeting) => (
-                    <Card key={meeting.id} variant="secondary">
-                      <Card.Content className="flex flex-col gap-1">
-                        <p className="font-medium text-foreground">{meeting.title}</p>
-                        <p className="text-sm text-muted">{formatMeetingTime(meeting)}</p>
-                      </Card.Content>
-                    </Card>
+                    <NextLink
+                      key={meeting.id}
+                      href={`/meeting/${meeting.id}`}
+                      className="rounded-2xl transition-shadow hover:shadow-md"
+                    >
+                      <Card variant="secondary">
+                        <Card.Content className="flex flex-col gap-1">
+                          <p className="font-medium text-foreground">{meeting.title}</p>
+                          <p className="text-sm text-muted">{formatMeetingTime(meeting)}</p>
+                        </Card.Content>
+                      </Card>
+                    </NextLink>
                   ))}
                 </div>
               </section>
@@ -141,12 +134,18 @@ export default function Home() {
               ) : (
                 <div className="flex flex-col gap-2">
                   {sortedMeetings.map((meeting) => (
-                    <Card key={meeting.id}>
-                      <Card.Content className="flex flex-row items-center justify-between gap-4">
-                        <p className="font-medium text-foreground">{meeting.title}</p>
-                        <p className="text-sm text-muted">{formatMeetingTime(meeting)}</p>
-                      </Card.Content>
-                    </Card>
+                    <NextLink
+                      key={meeting.id}
+                      href={`/meeting/${meeting.id}`}
+                      className="rounded-2xl transition-shadow hover:shadow-md"
+                    >
+                      <Card>
+                        <Card.Content className="flex flex-row items-center justify-between gap-4">
+                          <p className="font-medium text-foreground">{meeting.title}</p>
+                          <p className="text-sm text-muted">{formatMeetingTime(meeting)}</p>
+                        </Card.Content>
+                      </Card>
+                    </NextLink>
                   ))}
                 </div>
               )}
