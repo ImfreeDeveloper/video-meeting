@@ -5,7 +5,8 @@ import NextLink from 'next/link';
 import { useRouter } from 'next/navigation';
 import { use, useEffect, useRef, useState } from 'react';
 import { ArrowLeftIcon, PaperclipIcon, UploadIcon } from '@/components/icons';
-import { fetchMeeting, MeetingApiError, type Meeting } from '@/lib/meeting-api';
+import { ApiError } from '@/lib/api-error';
+import { fetchMeeting, type Meeting } from '@/lib/meeting-api';
 import {
   listMeetingFiles,
   MeetingFileApiError,
@@ -78,7 +79,19 @@ export default function MeetingPage(props: PageProps<'/meeting/[id]'>) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [files, setFiles] = useState<MeetingFile[]>([]);
   const [uploadState, setUploadState] = useState<UploadState>({ phase: 'idle' });
+  const [loadedId, setLoadedId] = useState(id);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Next.js reuses this component across client-side navigations between
+  // different /meeting/[id] URLs (e.g. browser back/forward) — reset to a
+  // loading state for the new id during render, per React's guidance for
+  // resetting state on a prop change, rather than in the effect below
+  // (which would cause an extra render / trip the set-state-in-effect lint).
+  if (id !== loadedId) {
+    setLoadedId(id);
+    setStatus('loading');
+    setUploadState({ phase: 'idle' });
+  }
 
   useEffect(() => {
     if (!session) {
@@ -93,12 +106,16 @@ export default function MeetingPage(props: PageProps<'/meeting/[id]'>) {
         setStatus('ready');
       })
       .catch((error: unknown) => {
-        if (error instanceof MeetingApiError && error.status === 401) {
+        // Both fetchMeeting (MeetingApiError) and listMeetingFiles
+        // (MeetingFileApiError) can reject here — check the shared base
+        // class, not either concrete subclass, or one of the two calls
+        // failing silently falls through to the generic error state below.
+        if (error instanceof ApiError && error.status === 401) {
           clearAccessToken();
           router.replace('/login');
           return;
         }
-        if (error instanceof MeetingApiError && error.status === 404) {
+        if (error instanceof ApiError && error.status === 404) {
           setStatus('not-found');
           return;
         }

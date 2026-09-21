@@ -1,3 +1,5 @@
+import { ApiError, parseErrorMessageFromText } from '@/lib/api-error';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export interface MeetingFile {
@@ -14,12 +16,9 @@ export interface MeetingFile {
  * never reached the server) — the UI maps both format (415) and size (413)
  * rejections, plus the network case, to distinct messages.
  */
-export class MeetingFileApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message);
+export class MeetingFileApiError extends ApiError {
+  constructor(message: string, status: number) {
+    super(message, status);
     this.name = 'MeetingFileApiError';
   }
 }
@@ -37,19 +36,6 @@ export async function listMeetingFiles(
   }
 
   return response.json() as Promise<MeetingFile[]>;
-}
-
-interface ApiErrorBody {
-  message?: string | string[];
-}
-
-function parseErrorMessage(responseText: string, fallback: string): string {
-  try {
-    const body = JSON.parse(responseText) as ApiErrorBody;
-    return Array.isArray(body.message) ? body.message.join(', ') : (body.message ?? fallback);
-  } catch {
-    return fallback;
-  }
 }
 
 /**
@@ -78,10 +64,19 @@ export function uploadMeetingFile(
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        resolve(JSON.parse(xhr.responseText) as MeetingFile);
+        try {
+          resolve(JSON.parse(xhr.responseText) as MeetingFile);
+        } catch {
+          reject(
+            new MeetingFileApiError('Upload succeeded but the response was invalid', xhr.status),
+          );
+        }
       } else {
         reject(
-          new MeetingFileApiError(parseErrorMessage(xhr.responseText, 'Upload failed'), xhr.status),
+          new MeetingFileApiError(
+            parseErrorMessageFromText(xhr.responseText, 'Upload failed'),
+            xhr.status,
+          ),
         );
       }
     };

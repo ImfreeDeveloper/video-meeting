@@ -32,9 +32,10 @@ src/app/
     page.tsx                route: /meeting/[id] — meeting detail: file upload block (progress, error states) + attached files list
 src/lib/
   session.ts              localStorage access token, JWT payload decoding, and the shared client-side auth-gate (readSession/Session) every authenticated page uses
-  auth-api.ts              register/login against @claudelar/api
-  meeting-api.ts           fetch one/many meetings
-  meeting-file-api.ts      list a meeting's files; upload one via XMLHttpRequest (progress events; fetch can't report upload progress)
+  api-error.ts             ApiError base class + JSON/text error-body parsing, shared by every *-api.ts module below — code that can receive errors from more than one module (e.g. a page loading a meeting and its files together) must catch this base class, not enumerate each concrete subclass, or a missed one silently falls through to a generic error state
+  auth-api.ts              register/login against @claudelar/api; AuthApiError extends ApiError
+  meeting-api.ts           fetch one/many meetings; MeetingApiError extends ApiError
+  meeting-file-api.ts      list a meeting's files; upload one via XMLHttpRequest (progress events; fetch can't report upload progress); MeetingFileApiError extends ApiError
 src/components/
   icons.tsx                inline SVG icon components (stroke-based, Lucide-style) — add new ones here rather than pulling in an icon package
 public/                   static assets

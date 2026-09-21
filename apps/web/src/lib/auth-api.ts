@@ -1,21 +1,16 @@
+import { ApiError, parseErrorMessage, type ApiErrorBody } from '@/lib/api-error';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
-export class AuthApiError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message);
+export class AuthApiError extends ApiError {
+  constructor(message: string, status: number) {
+    super(message, status);
     this.name = 'AuthApiError';
   }
 }
 
 interface AccessTokenResponse {
   accessToken: string;
-}
-
-interface ApiErrorBody {
-  message?: string | string[];
 }
 
 async function postCredentials(
@@ -32,10 +27,7 @@ async function postCredentials(
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ApiErrorBody | null;
-    const message = Array.isArray(body?.message)
-      ? body.message.join(', ')
-      : (body?.message ?? fallbackMessage);
-    throw new AuthApiError(message, response.status);
+    throw new AuthApiError(parseErrorMessage(body, fallbackMessage), response.status);
   }
 
   return response.json() as Promise<AccessTokenResponse>;
