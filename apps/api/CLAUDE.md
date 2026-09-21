@@ -62,12 +62,19 @@ src/
       handlers/get-meeting.handler.ts      looks up one meeting scoped to the owner; not found (incl. another user's meeting) → 404
   meeting-file/
     meeting-file.module.ts       imports CqrsModule + AuthModule; does NOT import MeetingModule (reaches it via QueryBus, same as auth/ → users/)
-    meeting-file.controller.ts   POST /meeting/:meetingId/files — behind JwtAuthGuard, FileInterceptor('file', ...), dispatch only
+    meeting-file.controller.ts   POST/GET /meeting/:meetingId/files, GET/DELETE /meeting/:meetingId/files/:fileId — all behind JwtAuthGuard, dispatch only
     config/
-      file-upload.config.ts   MIME/extension allowlist, FILE_STORAGE_DIR/MAX_FILE_SIZE_BYTES resolution (lazy — read per call, not cached at import time), the multer options factory
+      file-upload.config.ts   MIME/extension allowlist, FILE_STORAGE_DIR/MAX_FILE_SIZE_BYTES resolution, the multer options factory
     commands/
-      upload-meeting-file.command.ts           UploadMeetingFileCommand(ownerId, meetingId, file)
-      handlers/upload-meeting-file.handler.ts  verifies ownership via GetMeetingQuery (meeting/), moves the file from the temp upload dir into its final <meetingId>/ dir, writes the MeetingFile row
+      upload-meeting-file.command.ts             UploadMeetingFileCommand(ownerId, meetingId, file)
+      handlers/upload-meeting-file.handler.ts    verifies ownership via GetMeetingQuery (meeting/), moves the file from the temp upload dir into its final <meetingId>/ dir, writes the MeetingFile row
+      delete-meeting-file.command.ts             DeleteMeetingFileCommand(ownerId, meetingId, fileId)
+      handlers/delete-meeting-file.handler.ts    verifies ownership, unlinks the file from disk (idempotent to ENOENT), then deletes the MeetingFile row
+    queries/
+      list-meeting-files.query.ts                ListMeetingFilesQuery(ownerId, meetingId)
+      handlers/list-meeting-files.handler.ts     verifies ownership, lists a meeting's files ordered by createdAt
+      get-meeting-file.query.ts                  GetMeetingFileQuery(ownerId, meetingId, fileId)
+      handlers/get-meeting-file.handler.ts       verifies ownership, looks up one file scoped to the meeting; not found (incl. another user's meeting/file) → 404
   generated/prisma/     Prisma Client output (generated, gitignored — run `prisma generate` after schema changes)
 prisma/
   schema.prisma         User model (id, email @unique, passwordHash, timestamps); Meeting model (id, title, startTime, endTime, ownerId → User, timestamps); MeetingFile model (id, meetingId → Meeting, filename, mimeType, size, storagePath, uploadedById → User, createdAt)
@@ -75,7 +82,7 @@ prisma/
 test/
   auth.e2e-spec.ts         supertest e2e for register/login
   meeting.e2e-spec.ts      supertest e2e for meeting create/list/get-by-id, incl. auth and per-user isolation
-  meeting-file.e2e-spec.ts supertest e2e for meeting file upload, incl. format/size rejection and cross-user isolation
+  meeting-file.e2e-spec.ts supertest e2e for meeting file upload/list/download/delete, incl. format/size rejection and cross-user isolation
   setup-env.ts         loads .env for e2e runs (vitest.config.e2e.ts setupFiles)
 ```
 
@@ -184,7 +191,9 @@ meeting 404s the same way `GET /meeting/:id` does.
   match one allowlist row (`meeting-file/config/file-upload.config.ts`).
 - No token, or an invalid/expired one → `401`. Unsupported format → `415`.
   Oversized file → `413`. Missing/nonexistent/another user's meeting → `404`.
-- Listing, downloading and deleting files are phase 2 — not implemented yet.
+- `GET /meeting/:meetingId/files` → `ListMeetingFilesQuery` → `ListMeetingFilesHandler` → `200 <MeetingFile[]>`, ordered by `createdAt` ascending. Only the meeting owner; empty array if the meeting has no files.
+- `GET /meeting/:meetingId/files/:fileId` → `GetMeetingFileQuery` → `GetMeetingFileHandler` → `200`, streamed via `StreamableFile` (`fs.createReadStream`, never buffered into memory) with `Content-Type` set to the stored `mimeType` and `Content-Disposition: attachment; filename="..."` set to the original `filename`. A missing file id, or a file belonging to another user's meeting, 404s the same way as an unknown/foreign meeting id.
+- `DELETE /meeting/:meetingId/files/:fileId` → `DeleteMeetingFileCommand` → `DeleteMeetingFileHandler` → `204`. Deletes disk first, then the DB row — `unlink` is idempotent to `ENOENT` (already-missing file doesn't block cleaning up the row), but a different disk error aborts before the row is deleted, so a temporarily-unreachable file never loses its metadata. Once deleted, `GET .../files/:fileId` 404s the same as a file that never existed.
 
 ### Database (Prisma)
 
@@ -262,7 +271,7 @@ config, or a changed port → update this file (and `.env.example` / the root
 
 ## File upload
 
-Phase 1 (upload) is implemented — see [Meeting files](#meeting-files). Phases
-2+ (list/download/delete) aren't yet; consult
-@research/research-meeting-upload for the intended design before building
-them (storage layout, streaming download, delete ordering).
+Phases 1 (upload) and 2 (list/download/delete) are implemented — see
+[Meeting files](#meeting-files). @research/research-meeting-upload has the
+underlying design rationale (storage layout, streaming, delete ordering) if
+it's ever unclear why something is built the way it is.
