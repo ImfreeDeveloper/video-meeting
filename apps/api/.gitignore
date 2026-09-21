@@ -4,6 +4,9 @@ node_modules
 
 /src/generated/prisma
 
+# Local disk storage for uploaded meeting files (dev/test) — path configurable via FILE_STORAGE_DIR
+/storage
+
 # AI assistant skills auto-installed by `prisma init` — not used by this repo
 .claude/skills
 .agents

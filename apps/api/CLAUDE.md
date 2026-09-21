@@ -60,13 +60,22 @@ src/
       handlers/list-meetings.handler.ts    lists only the authenticated user's meetings
       get-meeting.query.ts                 GetMeetingQuery(ownerId, id)
       handlers/get-meeting.handler.ts      looks up one meeting scoped to the owner; not found (incl. another user's meeting) → 404
+  meeting-file/
+    meeting-file.module.ts       imports CqrsModule + AuthModule; does NOT import MeetingModule (reaches it via QueryBus, same as auth/ → users/)
+    meeting-file.controller.ts   POST /meeting/:meetingId/files — behind JwtAuthGuard, FileInterceptor('file', ...), dispatch only
+    config/
+      file-upload.config.ts   MIME/extension allowlist, FILE_STORAGE_DIR/MAX_FILE_SIZE_BYTES resolution (lazy — read per call, not cached at import time), the multer options factory
+    commands/
+      upload-meeting-file.command.ts           UploadMeetingFileCommand(ownerId, meetingId, file)
+      handlers/upload-meeting-file.handler.ts  verifies ownership via GetMeetingQuery (meeting/), moves the file from the temp upload dir into its final <meetingId>/ dir, writes the MeetingFile row
   generated/prisma/     Prisma Client output (generated, gitignored — run `prisma generate` after schema changes)
 prisma/
-  schema.prisma         User model (id, email @unique, passwordHash, timestamps); Meeting model (id, title, startTime, endTime, ownerId → User, timestamps)
+  schema.prisma         User model (id, email @unique, passwordHash, timestamps); Meeting model (id, title, startTime, endTime, ownerId → User, timestamps); MeetingFile model (id, meetingId → Meeting, filename, mimeType, size, storagePath, uploadedById → User, createdAt)
   migrations/           Prisma migration history (committed)
 test/
-  auth.e2e-spec.ts     supertest e2e for register/login
-  meeting.e2e-spec.ts  supertest e2e for meeting create/list/get-by-id, incl. auth and per-user isolation
+  auth.e2e-spec.ts         supertest e2e for register/login
+  meeting.e2e-spec.ts      supertest e2e for meeting create/list/get-by-id, incl. auth and per-user isolation
+  meeting-file.e2e-spec.ts supertest e2e for meeting file upload, incl. format/size rejection and cross-user isolation
   setup-env.ts         loads .env for e2e runs (vitest.config.e2e.ts setupFiles)
 ```
 
@@ -147,6 +156,33 @@ guard) — there is no cross-user visibility.
 - `GET /meeting/:id` → `GetMeetingQuery` → `GetMeetingHandler` → `200 <Meeting>`. Looked up by `id` **and** `ownerId` together — an id that exists but belongs to another user 404s the same as one that doesn't exist at all, so existence isn't leaked.
 - No token, or an invalid/expired one → `401` (from `JwtAuthGuard`, before the request reaches the CommandBus/QueryBus). Invalid payload on create → `400`.
 
+### Meeting files
+
+Lives in `meeting-file/`, not `meeting/` — a separate module so `meeting/` stays
+storage-agnostic. Protected by the same `JwtAuthGuard`; ownership of the
+`:meetingId` in the route is checked by dispatching `GetMeetingQuery` (from
+`meeting/`) via `QueryBus` rather than importing `MeetingModule` directly (same
+cross-module pattern as `auth/` → `users/`) — a non-existent or another user's
+meeting 404s the same way `GET /meeting/:id` does.
+
+- `POST /meeting/:meetingId/files` (multipart, field name `file`) →
+  `UploadMeetingFileCommand` → `UploadMeetingFileHandler` → `201 <MeetingFile>`.
+- Upload flow: `FileInterceptor('file', meetingFileMulterOptions())` writes the
+  incoming file to a temp dir under `FILE_STORAGE_DIR` with a random name
+  (`fileFilter`/`limits.fileSize` reject an unsupported MIME/extension or an
+  oversized file — `415`/`413` — **before** any bytes are written, per the
+  disk-write requirement in the plan). The handler then verifies meeting
+  ownership, moves the file into its final `<meetingId>/` directory, and
+  writes the `MeetingFile` row (original filename, MIME type, size, the
+  storage path _relative_ to `FILE_STORAGE_DIR`, `uploadedById`). Ownership
+  failure cleans up the temp file before rethrowing.
+- Supported types: audio (`.mp3`, `.wav`, `.m4a`), video (`.mp4`, `.mov`),
+  documents (`.pdf`, `.docx`, `.txt`) — both extension and MIME type must
+  match one allowlist row (`meeting-file/config/file-upload.config.ts`).
+- No token, or an invalid/expired one → `401`. Unsupported format → `415`.
+  Oversized file → `413`. Missing/nonexistent/another user's meeting → `404`.
+- Listing, downloading and deleting files are phase 2 — not implemented yet.
+
 ### Database (Prisma)
 
 - ORM is Prisma 7 (`prisma/schema.prisma`), pointed at the repo-root Docker Compose Postgres via `DATABASE_URL`.
@@ -203,7 +239,7 @@ guard) — there is no cross-user visibility.
 
 ## Config
 
-- `PORT` (default `3001`), `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGIN` (default `http://localhost:3000`, the origin allowed to call the API — `@claudelar/web`'s dev server) — see `.env.example`. No `ConfigModule`; `dotenv/config` loads `.env` at the top of `main.ts` (and in `test/setup-env.ts` for e2e), `main.ts`/services read `process.env` directly.
+- `PORT` (default `3001`), `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGIN` (default `http://localhost:3000`, the origin allowed to call the API — `@claudelar/web`'s dev server), `FILE_STORAGE_DIR` (default `./storage/uploads`, where meeting file uploads are stored on disk), `MAX_FILE_SIZE_BYTES` (default `524288000` / 500 MiB, max size of a single meeting file upload) — see `.env.example`. No `ConfigModule`; `dotenv/config` loads `.env` at the top of `main.ts` (and in `test/setup-env.ts` for e2e), `main.ts`/services read `process.env` directly. `FILE_STORAGE_DIR`/`MAX_FILE_SIZE_BYTES` are read lazily (`meeting-file/config/file-upload.config.ts`), not cached at import time, so tests can override them before compiling `AppModule`.
 - `nest-cli.json` — `sourceRoot: src`, `deleteOutDir` on build.
 
 ## Conventions
@@ -223,4 +259,7 @@ config, or a changed port → update this file (and `.env.example` / the root
 
 ## File upload
 
-Use this reasearch for it: @research/research-meeting-upload
+Phase 1 (upload) is implemented — see [Meeting files](#meeting-files). Phases
+2+ (list/download/delete) aren't yet; consult
+@research/research-meeting-upload for the intended design before building
+them (storage layout, streaming download, delete ordering).
