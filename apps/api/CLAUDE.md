@@ -22,13 +22,21 @@ src/
     prisma.module.ts    @Global() module exporting PrismaService
     prisma.service.ts   PrismaClient (pg driver adapter), connects/disconnects with the Nest lifecycle
   users/
-    users.module.ts        registers CqrsModule; no controller — reached only via CommandBus/QueryBus
+    users.module.ts        registers CqrsModule + AuthModule (for JwtAuthGuard)
+    users.controller.ts    GET /users/me, PATCH /users/me — behind JwtAuthGuard, dispatch only, via CommandBus/QueryBus
+    user-profile.ts        UserProfile (id, email, name, avatarUrl) + toUserProfile(user) — the only shape a User row is ever returned in over HTTP
+    dto/
+      update-user.dto.ts   name (trimmed, non-empty, max 100 chars)
     commands/
       create-user.command.ts           CreateUserCommand(email, password)
       handlers/create-user.handler.ts  hashes the password (bcryptjs), creates the user, publishes UserRegisteredEvent, returns `{ id, email }`; duplicate email (Prisma P2002) → ConflictException
+      update-user-name.command.ts          UpdateUserNameCommand(userId, name)
+      handlers/update-user-name.handler.ts renames the user, returns the updated UserProfile; deleted user (Prisma P2025) → NotFoundException
     queries/
       find-user-by-email.query.ts             FindUserByEmailQuery(email)
       handlers/find-user-by-email.handler.ts  looks up a user by email (full record, incl. passwordHash), or `null`
+      find-user-by-id.query.ts                FindUserByIdQuery(id)
+      handlers/find-user-by-id.handler.ts     looks up a user by id, returns a UserProfile; no match → NotFoundException
     events/
       user-registered.event.ts             UserRegisteredEvent(userId, email)
       handlers/user-registered.handler.ts  logs on registration; add more handlers here for side effects (welcome email, analytics, …)
@@ -79,12 +87,13 @@ src/
       handlers/get-meeting-file.handler.ts       verifies ownership, looks up one file scoped to the meeting; not found (incl. another user's meeting/file) → 404
   generated/prisma/     Prisma Client output (generated, gitignored — run `prisma generate` after schema changes)
 prisma/
-  schema.prisma         User model (id, email @unique, passwordHash, timestamps); Meeting model (id, title, startTime, endTime, ownerId → User, timestamps); MeetingFile model (id, meetingId → Meeting, filename, mimeType, size, storagePath, uploadedById → User, createdAt)
+  schema.prisma         User model (id, email @unique, passwordHash, name?, avatarUrl?, timestamps); Meeting model (id, title, startTime, endTime, ownerId → User, timestamps); MeetingFile model (id, meetingId → Meeting, filename, mimeType, size, storagePath, uploadedById → User, createdAt)
   migrations/           Prisma migration history (committed)
 test/
   auth.e2e-spec.ts         supertest e2e for register/login
   meeting.e2e-spec.ts      supertest e2e for meeting create/list/get-by-id, incl. auth and per-user isolation
   meeting-file.e2e-spec.ts supertest e2e for meeting file upload/list/download/delete, incl. format/size rejection and cross-user isolation
+  users.e2e-spec.ts        supertest e2e for reading and renaming the current user via /users/me
   setup-env.ts         loads .env for e2e runs (vitest.config.e2e.ts setupFiles)
 ```
 
@@ -129,8 +138,22 @@ not a one-off:
 
 ### Users
 
-Owns the `User` record: creating one and looking one up. No controller — it's
-only reached through the bus, currently by `auth/`.
+Owns the `User` record: creating one, looking one up, and the authenticated
+user's own profile (`/users/me`). `auth/` reaches the first two through the bus
+without importing this module.
+
+Both `/users/me` routes are behind `JwtAuthGuard` and resolve the user from
+`request.user.userId` — there is no user id in the path or body, so a caller
+can only ever read or rename themselves (an `id` sent in the body is dropped by
+the global `ValidationPipe`'s `whitelist`, not honoured).
+
+- `GET /users/me` → `FindUserByIdQuery` → `FindUserByIdHandler` → `200 { id, email, name, avatarUrl }`.
+- `PATCH /users/me` `{ name }` → `UpdateUserNameCommand` → `UpdateUserNameHandler` → `200 { id, email, name, avatarUrl }`. The name is trimmed before validation, so a whitespace-only name is rejected as empty; missing, empty, non-string or longer than 100 chars → `400`.
+- No token, or an invalid/expired one → `401`.
+- A `User` row is never returned directly — both routes go through
+  `toUserProfile()` (`users/user-profile.ts`), which builds the response by
+  picking fields, so `passwordHash` (or any secret column added later) can't
+  leak by being forgotten.
 
 - `CreateUserCommand(email, password)` → `CreateUserHandler` → hashes the
   password (`bcryptjs`), inserts the row, publishes `UserRegisteredEvent`
@@ -140,6 +163,11 @@ only reached through the bus, currently by `auth/`.
 - `FindUserByEmailQuery(email)` → `FindUserByEmailHandler` → returns the full
   `User` row (including `passwordHash`, needed by `auth/` to verify a login)
   or `null` if no match. Read-only, never creates anything.
+- `FindUserByIdQuery(id)` → `FindUserByIdHandler` → returns a `UserProfile`
+  (never the raw row) or `NotFoundException` (`404`). Used by `GET /users/me`.
+- `UpdateUserNameCommand(userId, name)` → `UpdateUserNameHandler` → renames
+  the user scoped to `userId` and returns the updated `UserProfile`. A row
+  that disappeared mid-request (Prisma `P2025`) → `NotFoundException`.
 
 ### Auth
 

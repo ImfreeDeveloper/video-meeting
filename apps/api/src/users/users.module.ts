@@ -1,15 +1,20 @@
 import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
+import { AuthModule } from '../auth/auth.module.js';
 import { CreateUserHandler } from './commands/handlers/create-user.handler.js';
+import { UpdateUserNameHandler } from './commands/handlers/update-user-name.handler.js';
 import { UserRegisteredHandler } from './events/handlers/user-registered.handler.js';
 import { FindUserByEmailHandler } from './queries/handlers/find-user-by-email.handler.js';
+import { FindUserByIdHandler } from './queries/handlers/find-user-by-id.handler.js';
+import { UsersController } from './users.controller.js';
 
-const CommandHandlers = [CreateUserHandler];
-const QueryHandlers = [FindUserByEmailHandler];
+const CommandHandlers = [CreateUserHandler, UpdateUserNameHandler];
+const QueryHandlers = [FindUserByEmailHandler, FindUserByIdHandler];
 const EventHandlers = [UserRegisteredHandler];
 
 @Module({
-  imports: [CqrsModule],
+  imports: [CqrsModule, AuthModule],
+  controllers: [UsersController],
   providers: [...CommandHandlers, ...QueryHandlers, ...EventHandlers],
 })
 export class UsersModule {}
