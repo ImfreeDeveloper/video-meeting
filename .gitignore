@@ -47,3 +47,58 @@ next-env.d.ts
 
 # claude code — personal, machine-local settings (shared config stays tracked)
 .claude/settings.local.json
+
+# Dependencies
+node_modules
+.pnpw
+.pnp.js
+/screenshot
+.playwright-mcp
+CLAUDE.local.md
+
+# Build outputs
+.next
+dist
+build
+out
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Cache
+.turbo
+.cache
+.eslintcache
+
+# TypeScript build info
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+coverage
+
+# Uploads
+apps/api/uploads/
+
+# Claude Code tooling
+.claude/ralph.iterations.json
