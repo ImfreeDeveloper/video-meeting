@@ -1,6 +1,6 @@
 {
-  "active": false,
-  "milestone": "",
+  "active": true,
+  "milestone": "Фаза 1: Backend — профиль пользователя: чтение и имя (tracer bullet)",
   "maxIterations": 1,
   "maxTurns": 50,
   "branch": "feature/phase-5",
