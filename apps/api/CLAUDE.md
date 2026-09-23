@@ -17,6 +17,7 @@ NestJS 12 HTTP API. See the repo-root `CLAUDE.md` for monorepo-wide setup.
 ```
 src/
   main.ts               bootstrap; listens on process.env.PORT ?? 3001; loads .env; global ValidationPipe
+  validation-pipe.ts    createValidationPipe() — the one global ValidationPipe config, shared by main.ts and every e2e spec
   app.module.ts         root module — no controllers/providers of its own, just wires up feature modules (imports PrismaModule, UsersModule, AuthModule, MeetingModule, MeetingFileModule)
   prisma/
     prisma.module.ts    @Global() module exporting PrismaService
@@ -98,8 +99,11 @@ test/
 ```
 
 DTO validation uses `class-validator` + `class-transformer` via a global
-`ValidationPipe` (`{ whitelist: true, transform: true }`), applied in both
-`main.ts` and each e2e spec's `beforeEach`.
+`ValidationPipe` (`{ whitelist: true, transform: true }`), built by
+`createValidationPipe()` (`src/validation-pipe.ts`) and applied in both
+`main.ts` and each e2e spec's `beforeEach` — specs share the one config rather
+than re-declaring it, so a test can't pass against looser rules than the app
+really boots with.
 
 ### CQRS
 

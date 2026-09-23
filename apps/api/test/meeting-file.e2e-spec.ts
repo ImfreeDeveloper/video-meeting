@@ -3,10 +3,11 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { createValidationPipe } from '../src/validation-pipe.js';
 
 /**
  * Phase 1 tracer bullet: upload a file onto an existing meeting. Storage is
@@ -30,7 +31,7 @@ describe('Meeting files (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(createValidationPipe());
     await app.init();
     prisma = moduleFixture.get(PrismaService);
   });
