@@ -5,8 +5,7 @@
     "allow": [
       "Edit(*)",
       "Write(*)",
-      "Bash(npm run test)",
-      "Bash(npm run test:e2e)",
+      "Bash(npm run *)",
       "Bash(git *)",
       "Bash(gh *)",
       "Bash(npx prisma *)"

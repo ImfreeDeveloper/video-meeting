@@ -1,12 +1,10 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 
-const config = JSON.parse(
-  fs.readFileSync('.claude/ralph.config.json', 'utf8')
-);
+const config = JSON.parse(fs.readFileSync('.claude/ralph.config.json', 'utf8'));
 
 if (!config.active) {
-  process.exit(0)
+  process.exit(0);
 }
 
 // Счётчик итераций
@@ -24,7 +22,7 @@ if (counter.count >= config.maxIterations) {
 }
 
 const output = execSync(
-  `gh issue list --milestone "${config.milestone}" --state open --json number,title`
+  `gh issue list --milestone "${config.milestone}" --state open --json number,title`,
 ).toString();
 const issues = JSON.parse(output);
 
@@ -53,11 +51,4 @@ if (issues.length > 0) {
     `claude -p "Сделай детальное code review PR ${prUrl}. Проверь архитектуру, безопасность, производительность и соответствие PRD. Оставь комментарии прямо в PR через gh cli." --model claude-opus-4-7`,
     { stdio: 'inherit' },
   );
-  // // Milestone закрыт — сбрасываем счётчик и создаём PR
-  // console.log(`✅ Milestone завершён. Создаём PR.`);
-  // fs.writeFileSync(counterFile, JSON.stringify({ count: 0 }));
-  // execSync(
-  //   `gh pr create --title "feat: ${config.milestone}" --body "Closes all issues in milestone: ${config.milestone}" --base main --head ${config.branch}`,
-  //   { stdio: 'inherit' },
-  // );
 }
