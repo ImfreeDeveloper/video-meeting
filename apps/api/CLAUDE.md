@@ -18,14 +18,19 @@ NestJS 12 HTTP API. See the repo-root `CLAUDE.md` for monorepo-wide setup.
 src/
   main.ts               bootstrap; listens on process.env.PORT ?? 3001; loads .env; global ValidationPipe
   validation-pipe.ts    createValidationPipe() — the one global ValidationPipe config, shared by main.ts and every e2e spec
+  storage.util.ts       unlinkIfExists(path) — deletes a file, tolerating it already being gone (ENOENT); shared by meeting-file/ and users/
   app.module.ts         root module — no controllers/providers of its own, just wires up feature modules (imports PrismaModule, UsersModule, AuthModule, MeetingModule, MeetingFileModule)
   prisma/
     prisma.module.ts    @Global() module exporting PrismaService
     prisma.service.ts   PrismaClient (pg driver adapter), connects/disconnects with the Nest lifecycle
   users/
     users.module.ts        registers CqrsModule + AuthModule (for JwtAuthGuard)
-    users.controller.ts    GET /users/me, PATCH /users/me — behind JwtAuthGuard, dispatch only, via CommandBus/QueryBus
+    users.controller.ts    GET /users/me, PATCH /users/me, POST /users/me/avatar — behind JwtAuthGuard, dispatch only, via CommandBus/QueryBus
+    user-avatar.controller.ts  GET /users/:userId/avatar/:filename — public (no guard), streams the stored avatar file
     user-profile.ts        UserProfile (id, email, name, avatarUrl) + toUserProfile(user) — the only shape a User row is ever returned in over HTTP
+    avatar-url.ts          buildAvatarUrl/avatarFilenameFromUrl (the `avatarUrl` ↔ stored filename mapping) + the isStoredAvatarFilename/isSafeUserIdSegment path-segment checks
+    config/
+      avatar-upload.config.ts  image MIME/extension allowlist, AVATAR_STORAGE_DIR/MAX_AVATAR_SIZE_BYTES resolution, avatarMimeType(), the multer options factory
     dto/
       update-user.dto.ts   name (trimmed, non-empty, max 100 chars)
     commands/
@@ -33,6 +38,8 @@ src/
       handlers/create-user.handler.ts  hashes the password (bcryptjs), creates the user, publishes UserRegisteredEvent, returns `{ id, email }`; duplicate email (Prisma P2002) → ConflictException
       update-user-name.command.ts          UpdateUserNameCommand(userId, name)
       handlers/update-user-name.handler.ts renames the user, returns the updated UserProfile; deleted user (Prisma P2025) → NotFoundException
+      upload-avatar.command.ts             UploadAvatarCommand(userId, file)
+      handlers/upload-avatar.handler.ts    moves the upload from the temp dir into <userId>/, writes the new avatarUrl, then deletes the previous avatar file
     queries/
       find-user-by-email.query.ts             FindUserByEmailQuery(email)
       handlers/find-user-by-email.handler.ts  looks up a user by email (full record, incl. passwordHash), or `null`
@@ -73,7 +80,6 @@ src/
     meeting-file.module.ts       imports CqrsModule + AuthModule; does NOT import MeetingModule (reaches it via QueryBus, same as auth/ → users/)
     meeting-file.controller.ts   POST/GET /meeting/:meetingId/files, GET/DELETE /meeting/:meetingId/files/:fileId — all behind JwtAuthGuard, dispatch only
     ownership.util.ts    assertMeetingOwnership(queryBus, ownerId, meetingId) — the GetMeetingQuery dispatch shared by all four handlers below
-    storage.util.ts      unlinkIfExists(path) — deletes a file, tolerating it already being gone (ENOENT); shared by the upload and delete handlers
     config/
       file-upload.config.ts   MIME/extension allowlist, FILE_STORAGE_DIR/MAX_FILE_SIZE_BYTES resolution, the multer options factory
     commands/
@@ -95,6 +101,7 @@ test/
   meeting.e2e-spec.ts      supertest e2e for meeting create/list/get-by-id, incl. auth and per-user isolation
   meeting-file.e2e-spec.ts supertest e2e for meeting file upload/list/download/delete, incl. format/size rejection and cross-user isolation
   users.e2e-spec.ts        supertest e2e for reading and renaming the current user via /users/me
+  user-avatar.e2e-spec.ts  supertest e2e for avatar upload/replacement and public delivery, incl. format/size rejection and cross-user isolation
   setup-env.ts         loads .env for e2e runs (vitest.config.e2e.ts setupFiles)
 ```
 
@@ -146,15 +153,16 @@ Owns the `User` record: creating one, looking one up, and the authenticated
 user's own profile (`/users/me`). `auth/` reaches the first two through the bus
 without importing this module.
 
-Both `/users/me` routes are behind `JwtAuthGuard` and resolve the user from
+All `/users/me` routes are behind `JwtAuthGuard` and resolve the user from
 `request.user.userId` — there is no user id in the path or body, so a caller
-can only ever read or rename themselves (an `id` sent in the body is dropped by
-the global `ValidationPipe`'s `whitelist`, not honoured).
+can only ever read, rename or re-avatar themselves (an `id` sent in the body is
+dropped by the global `ValidationPipe`'s `whitelist`, not honoured).
 
 - `GET /users/me` → `FindUserByIdQuery` → `FindUserByIdHandler` → `200 { id, email, name, avatarUrl }`.
 - `PATCH /users/me` `{ name }` → `UpdateUserNameCommand` → `UpdateUserNameHandler` → `200 { id, email, name, avatarUrl }`. The name is trimmed before validation, so a whitespace-only name is rejected as empty; missing, empty, non-string or longer than 100 chars → `400`.
+- `POST /users/me/avatar` (multipart, field name `file`) → `UploadAvatarCommand` → `UploadAvatarHandler` → `200 { id, email, name, avatarUrl }` — see [Avatars](#avatars).
 - No token, or an invalid/expired one → `401`.
-- A `User` row is never returned directly — both routes go through
+- A `User` row is never returned directly — every route goes through
   `toUserProfile()` (`users/user-profile.ts`), which builds the response by
   picking fields, so `passwordHash` (or any secret column added later) can't
   leak by being forgotten.
@@ -172,6 +180,50 @@ the global `ValidationPipe`'s `whitelist`, not honoured).
 - `UpdateUserNameCommand(userId, name)` → `UpdateUserNameHandler` → renames
   the user scoped to `userId` and returns the updated `UserProfile`. A row
   that disappeared mid-request (Prisma `P2025`) → `NotFoundException`.
+
+### Avatars
+
+Lives in `users/` (unlike meeting files, which get their own module) — an
+avatar is a column on `User`, not a record of its own, so there is nothing for
+a separate module to own. A user has at most one; uploading a second one
+replaces the first.
+
+- `POST /users/me/avatar` (multipart, field name `file`) →
+  `UploadAvatarCommand` → `UploadAvatarHandler` → `200 <UserProfile>`. Behind
+  `JwtAuthGuard` on `UsersController`, so an unauthenticated upload is
+  rejected before `FileInterceptor` writes a single byte.
+- Supported types: `.jpg`/`.jpeg` (`image/jpeg`), `.png` (`image/png`),
+  `.webp` (`image/webp`) — extension **and** MIME type must match one
+  allowlist row, case-insensitively
+  (`users/config/avatar-upload.config.ts`). Deliberately narrower than the
+  meeting-file allowlist: an avatar is served off a public URL straight into
+  an `<img src>`.
+- Upload flow mirrors [Meeting files](#meeting-files): multer writes the file
+  to a `.tmp/` dir under `AVATAR_STORAGE_DIR` under a random
+  `<uuid><ext>` name (`fileFilter`/`limits.fileSize` reject an unsupported
+  type or an oversized file — `415`/`413` — before any bytes land), then the
+  handler moves it into `<userId>/`, writes the new `avatarUrl`, and only
+  afterwards deletes the file it replaced. That ordering is the invariant:
+  a failure before the DB update unlinks the new file and leaves the old
+  avatar intact, while a failure of the trailing delete is logged and
+  swallowed — a stale file on disk is harmless, a dangling `avatarUrl` is not.
+- `GET /users/:userId/avatar/:filename` (`users/user-avatar.controller.ts`) →
+  `200`, streamed via `StreamableFile` with `Content-Type` derived from the
+  extension. **Public — no `JwtAuthGuard`**, because a browser can't attach an
+  `Authorization` header to an `<img src>`. Its defence is instead a shape
+  check on both path params (`users/avatar-url.ts`): the filename must be a
+  UUID plus an allowed extension and the user id must have no path separator
+  or `.`, so a traversal like `..%2F..%2F.env` never reaches `join()`.
+  Anything that fails the check, or simply isn't on disk, → `404` (the
+  `StreamableFile` error handler maps `ENOENT` and re-sets `Content-Type` to
+  JSON, rather than leaking the absolute path via the default `400`).
+- `avatarUrl` is stored as that public route, not as a storage path, so the
+  web app can use it verbatim; `users/avatar-url.ts` owns both directions of
+  the mapping so the route and the stored value can't drift.
+- Known limitation: the read-then-update of `avatarUrl` isn't atomic, so two
+  uploads racing for the same user can orphan one file on disk. Harmless
+  (nothing points at it), but it's why the directory isn't assumed to hold
+  exactly one file.
 
 ### Auth
 
@@ -289,6 +341,7 @@ meeting 404s the same way `GET /meeting/:id` does.
 ## Config
 
 - `PORT` (default `3001`), `DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CORS_ORIGIN` (default `http://localhost:3000`, the origin allowed to call the API — `@claudelar/web`'s dev server), `FILE_STORAGE_DIR` (default `./storage/uploads`, where meeting file uploads are stored on disk), `MAX_FILE_SIZE_BYTES` (default `524288000` / 500 MiB, max size of a single meeting file upload) — see `.env.example`. No `ConfigModule`; `dotenv/config` loads `.env` at the top of `main.ts` (and in `test/setup-env.ts` for e2e), `main.ts`/services read `process.env` directly. `FILE_STORAGE_DIR` is resolved fresh on every upload (`meeting-file/config/file-upload.config.ts`); `MAX_FILE_SIZE_BYTES` is only read once, when that module is first imported (multer bakes it into the instance it builds) — either way, tests must set both before compiling `AppModule`, which `test/meeting-file.e2e-spec.ts` already does. `MAX_FILE_SIZE_BYTES` is also clamped to Postgres `Int`'s range (~2 GiB), since `MeetingFile.size` is stored as an `Int`.
+- `AVATAR_STORAGE_DIR` (default `./storage/avatars`, where user avatars are stored on disk) and `MAX_AVATAR_SIZE_BYTES` (default `5242880` / 5 MiB, max size of a single avatar upload) follow the same rules in `users/config/avatar-upload.config.ts` — directory resolved fresh per upload, size limit read once at import time — so `test/user-avatar.e2e-spec.ts` likewise sets both before compiling `AppModule`.
 - `nest-cli.json` — `sourceRoot: src`, `deleteOutDir` on build.
 
 ## Conventions
