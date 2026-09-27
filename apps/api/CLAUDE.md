@@ -25,17 +25,21 @@ src/
     prisma.service.ts   PrismaClient (pg driver adapter), connects/disconnects with the Nest lifecycle
   users/
     users.module.ts        registers CqrsModule + AuthModule (for JwtAuthGuard)
-    users.controller.ts    GET /users/me, PATCH /users/me, POST /users/me/avatar — behind JwtAuthGuard, dispatch only, via CommandBus/QueryBus
+    users.controller.ts    GET /users/me, PATCH /users/me, PATCH /users/me/password, POST /users/me/avatar — behind JwtAuthGuard, dispatch only, via CommandBus/QueryBus
     user-avatar.controller.ts  GET /users/:userId/avatar/:filename — public (no guard), streams the stored avatar file
     user-profile.ts        UserProfile (id, email, name, avatarUrl) + toUserProfile(user) — the only shape a User row is ever returned in over HTTP
     avatar-url.ts          buildAvatarUrl/avatarFilenameFromUrl (the `avatarUrl` ↔ stored filename mapping) + the isStoredAvatarFilename/isSafeUserIdSegment path-segment checks
+    password.util.ts       hashPassword/verifyPassword (bcryptjs) + the one salt-round cost factor, shared by CreateUserHandler and ChangePasswordHandler
     config/
       avatar-upload.config.ts  image MIME/extension allowlist, AVATAR_STORAGE_DIR/MAX_AVATAR_SIZE_BYTES resolution, avatarMimeType(), the multer options factory
     dto/
-      update-user.dto.ts   name (trimmed, non-empty, max 100 chars)
+      update-user.dto.ts     name (trimmed, non-empty, max 100 chars)
+      change-password.dto.ts oldPassword (non-empty) + newPassword (min 6 chars, same floor as register.dto.ts)
     commands/
       create-user.command.ts           CreateUserCommand(email, password)
-      handlers/create-user.handler.ts  hashes the password (bcryptjs), creates the user, publishes UserRegisteredEvent, returns `{ id, email }`; duplicate email (Prisma P2002) → ConflictException
+      handlers/create-user.handler.ts  hashes the password (password.util.ts), creates the user, publishes UserRegisteredEvent, returns `{ id, email }`; duplicate email (Prisma P2002) → ConflictException
+      change-password.command.ts           ChangePasswordCommand(userId, oldPassword, newPassword)
+      handlers/change-password.handler.ts  verifies oldPassword against the stored hash, then writes the new hash; wrong password → BadRequestException
       update-user-name.command.ts          UpdateUserNameCommand(userId, name)
       handlers/update-user-name.handler.ts renames the user, returns the updated UserProfile; deleted user (Prisma P2025) → NotFoundException
       upload-avatar.command.ts             UploadAvatarCommand(userId, file)
@@ -102,6 +106,7 @@ test/
   meeting-file.e2e-spec.ts supertest e2e for meeting file upload/list/download/delete, incl. format/size rejection and cross-user isolation
   users.e2e-spec.ts        supertest e2e for reading and renaming the current user via /users/me
   user-avatar.e2e-spec.ts  supertest e2e for avatar upload/replacement and public delivery, incl. format/size rejection and cross-user isolation
+  user-password.e2e-spec.ts supertest e2e for changing the current user's password, incl. wrong-current-password rejection, what login accepts afterwards and cross-user isolation
   setup-env.ts         loads .env for e2e runs (vitest.config.e2e.ts setupFiles)
 ```
 
@@ -155,11 +160,13 @@ without importing this module.
 
 All `/users/me` routes are behind `JwtAuthGuard` and resolve the user from
 `request.user.userId` — there is no user id in the path or body, so a caller
-can only ever read, rename or re-avatar themselves (an `id` sent in the body is
-dropped by the global `ValidationPipe`'s `whitelist`, not honoured).
+can only ever read, rename, re-avatar or re-password themselves (an `id` sent
+in the body is dropped by the global `ValidationPipe`'s `whitelist`, not
+honoured).
 
 - `GET /users/me` → `FindUserByIdQuery` → `FindUserByIdHandler` → `200 { id, email, name, avatarUrl }`.
 - `PATCH /users/me` `{ name }` → `UpdateUserNameCommand` → `UpdateUserNameHandler` → `200 { id, email, name, avatarUrl }`. The name is trimmed before validation, so a whitespace-only name is rejected as empty; missing, empty, non-string or longer than 100 chars → `400`.
+- `PATCH /users/me/password` `{ oldPassword, newPassword }` → `ChangePasswordCommand` → `ChangePasswordHandler` → `204` — see [Passwords](#passwords).
 - `POST /users/me/avatar` (multipart, field name `file`) → `UploadAvatarCommand` → `UploadAvatarHandler` → `200 { id, email, name, avatarUrl }` — see [Avatars](#avatars).
 - No token, or an invalid/expired one → `401`.
 - A `User` row is never returned directly — every route goes through
@@ -180,6 +187,35 @@ dropped by the global `ValidationPipe`'s `whitelist`, not honoured).
 - `UpdateUserNameCommand(userId, name)` → `UpdateUserNameHandler` → renames
   the user scoped to `userId` and returns the updated `UserProfile`. A row
   that disappeared mid-request (Prisma `P2025`) → `NotFoundException`.
+
+### Passwords
+
+Hashing lives in `users/password.util.ts` (`hashPassword`/`verifyPassword` over
+`bcryptjs`), so the salt cost is stated once and registering a user can't drift
+away from changing a password. `auth/` still verifies a login against the hash
+itself — it reads the row via `FindUserByEmailQuery` and never writes one.
+
+- `PATCH /users/me/password` `{ oldPassword, newPassword }` →
+  `ChangePasswordCommand` → `ChangePasswordHandler` → `204 No Content`. Behind
+  `JwtAuthGuard` on `UsersController`, resolved from `request.user.userId` — so
+  the only password a caller can change is their own, whatever ids or emails
+  they put in the body.
+- `oldPassword` is verified against the stored hash before anything is written;
+  a mismatch → `400` (`'Current password is incorrect'`) and the row is
+  untouched. Deliberately **not** `401`: the caller's token is valid, and a
+  `401` here reads to a client as an expired session and sends the user to
+  `/login` mid-form.
+- Validation (`users/dto/change-password.dto.ts`): `oldPassword` must be a
+  non-empty string — its length isn't re-checked, since the rules that applied
+  when it was set aren't the caller's problem and a short old password should
+  fail as _wrong_, not as invalid. `newPassword` must be a string of at least 6
+  characters, the same floor `auth/dto/register.dto.ts` applies at signup.
+  Either one missing or malformed → `400`.
+- Only the hash changes: existing access tokens stay valid (they carry
+  `{ sub, email }`, nothing password-derived), so a user who changes their
+  password isn't logged out of the tab they did it in. There is no token
+  revocation in this app yet — a token issued before the change still works
+  until it expires.
 
 ### Avatars
 

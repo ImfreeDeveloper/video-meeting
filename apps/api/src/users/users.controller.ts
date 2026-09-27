@@ -15,9 +15,11 @@ import {
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { type AuthenticatedRequest, JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { ChangePasswordCommand } from './commands/change-password.command.js';
 import { UpdateUserNameCommand } from './commands/update-user-name.command.js';
 import { UploadAvatarCommand } from './commands/upload-avatar.command.js';
 import { avatarMulterOptions } from './config/avatar-upload.config.js';
+import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { UpdateUserDto } from './dto/update-user.dto.js';
 import { FindUserByIdQuery } from './queries/find-user-by-id.query.js';
 import type { UserProfile } from './user-profile.js';
@@ -45,6 +47,17 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   update(@Req() request: AuthenticatedRequest, @Body() dto: UpdateUserDto): Promise<UserProfile> {
     return this.commandBus.execute(new UpdateUserNameCommand(request.user.userId, dto.name));
+  }
+
+  @Patch('me/password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    await this.commandBus.execute(
+      new ChangePasswordCommand(request.user.userId, dto.oldPassword, dto.newPassword),
+    );
   }
 
   @Post('me/avatar')

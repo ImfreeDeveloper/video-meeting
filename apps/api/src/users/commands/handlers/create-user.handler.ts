@@ -1,12 +1,10 @@
 import { ConflictException } from '@nestjs/common';
 import { CommandHandler, EventBus, type ICommandHandler } from '@nestjs/cqrs';
-import bcrypt from 'bcryptjs';
 import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
 import { UserRegisteredEvent } from '../../events/user-registered.event.js';
+import { hashPassword } from '../../password.util.js';
 import { CreateUserCommand } from '../create-user.command.js';
-
-const PASSWORD_SALT_ROUNDS = 10;
 
 export interface CreatedUser {
   id: string;
@@ -21,7 +19,7 @@ export class CreateUserHandler implements ICommandHandler<CreateUserCommand, Cre
   ) {}
 
   async execute(command: CreateUserCommand): Promise<CreatedUser> {
-    const passwordHash = await bcrypt.hash(command.password, PASSWORD_SALT_ROUNDS);
+    const passwordHash = await hashPassword(command.password);
 
     try {
       const user = await this.prisma.user.create({
