@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from './../src/app.module.js';
+import { createValidationPipe } from './../src/validation-pipe.js';
 
 /**
  * Registration and login both return an `accessToken`. Login must never
@@ -19,7 +20,7 @@ describe('Auth (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(createValidationPipe());
     await app.init();
   });
 

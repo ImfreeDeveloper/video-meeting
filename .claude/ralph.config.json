@@ -1,7 +1,8 @@
 {
-  "milestone": "",
+  "active": true,
+  "milestone": "Фаза 2: Backend — аватар: загрузка, хранение, отдача",
   "maxIterations": 1,
-  "maxTurns": 50,
-  "branch": "feature/phase-5",
+  "maxTurns": 500,
+  "branch": "feature/phase-6",
   "prompt": "Прочитай .claude/ralf.md и следуй правилам оттуда. Возьми следующую открытую issue из milestone '{milestone}' и реализуй его в '{branch}'"
 }

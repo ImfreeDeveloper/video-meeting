@@ -1,5 +1,16 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enabledMcpjsonServers": ["playwright"],
+  "permissions": {
+    "allow": [
+      "Edit(*)",
+      "Write(*)",
+      "Bash(npm run *)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(npx prisma *)"
+    ]
+  },
   "hooks": {
     "Stop": [
       {

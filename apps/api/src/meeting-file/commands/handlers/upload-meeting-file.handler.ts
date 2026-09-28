@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { CommandHandler, type ICommandHandler, QueryBus } from '@nestjs/cqrs';
 import type { MeetingFile } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { unlinkIfExists } from '../../../storage.util.js';
 import { resolveStorageRoot } from '../../config/file-upload.config.js';
 import { assertMeetingOwnership } from '../../ownership.util.js';
-import { unlinkIfExists } from '../../storage.util.js';
 import { UploadMeetingFileCommand } from '../upload-meeting-file.command.js';
 
 @CommandHandler(UploadMeetingFileCommand)

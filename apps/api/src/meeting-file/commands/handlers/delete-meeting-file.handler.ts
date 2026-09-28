@@ -3,9 +3,9 @@ import { NotFoundException } from '@nestjs/common';
 import { type ICommandHandler, CommandHandler, QueryBus } from '@nestjs/cqrs';
 import { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../../prisma/prisma.service.js';
+import { unlinkIfExists } from '../../../storage.util.js';
 import { resolveStorageRoot } from '../../config/file-upload.config.js';
 import { assertMeetingOwnership } from '../../ownership.util.js';
-import { unlinkIfExists } from '../../storage.util.js';
 import { DeleteMeetingFileCommand } from '../delete-meeting-file.command.js';
 
 const RECORD_NOT_FOUND = 'P2025';
